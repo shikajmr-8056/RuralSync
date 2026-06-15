@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Cpu, Wifi, HardDrive, RotateCcw, AlertTriangle, Eye, Settings, FileText } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Cpu, Wifi, HardDrive, RotateCcw, AlertTriangle, Eye, Settings, FileText, Smartphone } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { DeviceStatus, DeviceEvent, Order } from "../types";
 
@@ -27,7 +27,7 @@ export default function ESP32Mockup({
   const bufferedOrders = orders.filter((o) => o.status === "Pending");
 
   // Animate LED blink when actions happen
-  React.useEffect(() => {
+  useEffect(() => {
     if (status.status === "SYNCING") {
       setActiveLed("sync");
     } else if (bufferedOrders.length > 0 && Math.random() > 0.5) {
@@ -42,7 +42,7 @@ export default function ESP32Mockup({
   }, [orders, status.status]);
 
   return (
-    <div className="bg-slate-900 text-slate-100 rounded-3xl p-6 shadow-2xl border-4 border-slate-800 relative overflow-hidden backdrop-blur-xl">
+    <div className="bg-[#1E293B] text-slate-100 rounded-3xl p-6 shadow-xl border border-slate-700/50 dark:border-slate-800 relative overflow-hidden backdrop-blur-xl">
       {/* Glossy Overlay Reflection */}
       <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-white/10 pointer-events-none" />
 
@@ -53,7 +53,7 @@ export default function ESP32Mockup({
             <Cpu className="w-5 h-5 text-slate-900 stroke-[2.5]" />
           </div>
           <div>
-            <h3 className="font-display font-medium text-amber-400 text-sm tracking-wide">
+            <h3 className="font-display font-bold text-amber-400 text-sm tracking-wide">
               ESP32 EDGE GATEWAY
             </h3>
             <p className="text-[10px] text-slate-400 font-mono">
@@ -79,13 +79,13 @@ export default function ESP32Mockup({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5 relative z-10">
         
         {/* Left Side: Glowing LCD Screen */}
-        <div className="bg-slate-950 rounded-xl p-4 border border-slate-800 flex flex-col justify-between min-h-[220px] shadow-inner font-mono relative">
-          <div className="absolute top-1.5 right-2 flex gap-1.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]" title="POWER LED" />
+        <div className="bg-[#090D16] rounded-xl p-4 border border-cyan-500/20 flex flex-col justify-between min-h-[220px] shadow-[inset_0_0_12px_rgba(6,182,212,0.15)] font-mono relative">
+          <div className="absolute top-2 right-2 flex gap-1.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-[#EF4444] shadow-[0_0_8px_rgba(239,68,68,0.8)]" title="POWER LED" />
             <div
               className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
                 activeLed === "wifi" && isInternetAvailable
-                  ? "bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.8)]"
+                  ? "bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]"
                   : activeLed === "storage"
                   ? "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]"
                   : activeLed === "sync"
@@ -97,13 +97,13 @@ export default function ESP32Mockup({
           </div>
 
           <div>
-            <div className="text-[11px] text-amber-500 pb-1 border-b border-amber-500/20 flex justify-between">
-              <span>SSD1306 OLED v1.0</span>
-              <span className="text-[9px] text-slate-500 animate-pulse">● LIVE</span>
+            <div className="text-[11px] text-cyan-400 pb-1 border-b border-cyan-500/10 flex justify-between">
+              <span>OLED SSD1306 v1.0</span>
+              <span className="text-[9px] text-cyan-500/70 animate-pulse">● LIVE</span>
             </div>
             
             {/* Display screen body */}
-            <div className="mt-3 space-y-1.5 text-xs text-blue-300">
+            <div className="mt-3 space-y-1.5 text-xs text-cyan-300/95">
               <div className="flex justify-between">
                 <span>SSID:</span>
                 <span className="text-white font-medium">RuralNet_AM2</span>
@@ -113,26 +113,26 @@ export default function ESP32Mockup({
                 <span className="text-white">{isInternetAvailable ? "-64 dBm" : "DISCONN"}</span>
               </div>
               <div className="flex justify-between">
-                <span>Memory:</span>
+                <span>Partition:</span>
                 <span className="text-white">LittleFS Active</span>
               </div>
-              <div className="flex justify-between items-center bg-blue-950/40 p-1.5 rounded border border-blue-900/30 text-[11px] mt-2">
+              <div className="flex justify-between items-center bg-cyan-950/20 p-2 rounded border border-cyan-500/10 text-[11px] mt-2">
                 <span className="flex items-center gap-1.5">
                   <HardDrive className="w-3.5 h-3.5 text-amber-400" />
-                  Buffer Queue:
+                  Local Buffer:
                 </span>
-                <span className={`px-1.5 py-0.2 rounded font-bold ${bufferedOrders.length > 0 ? "bg-amber-400 text-slate-950 animate-bounce" : "bg-slate-800 text-slate-400"}`}>
+                <span className={`px-2 py-0.5 rounded font-bold ${bufferedOrders.length > 0 ? "bg-amber-400 text-slate-950 animate-bounce" : "bg-slate-800 text-slate-400"}`}>
                   {bufferedOrders.length} orders
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="mt-4 pt-1.5 border-t border-slate-900 text-[10px] text-slate-400 flex justify-between items-center leading-none">
+          <div className="mt-4 pt-2 border-t border-slate-900 text-[10px] text-slate-500 flex justify-between items-center leading-none">
             <span className="truncate max-w-[120px]">
-              {events[0] ? events[0].event : "WiFi search..."}
+              {events[0] ? events[0].event : "WiFi searching..."}
             </span>
-            <span className="text-emerald-400 text-[9px] bg-emerald-950/60 px-1 py-0.5 rounded font-semibold shrink-0">
+            <span className="text-[#10B981] text-[9px] bg-[#10B981]/10 px-2 py-0.5 rounded font-bold shrink-0">
               {status.status}
             </span>
           </div>
@@ -140,58 +140,58 @@ export default function ESP32Mockup({
 
         {/* Right Side: Microcontroller hardware components & buttons */}
         <div className="flex flex-col justify-between gap-4">
-          <div className="bg-slate-950/50 p-3.5 rounded-xl border border-slate-800 text-xs space-y-2.5">
+          <div className="bg-[#0F172A] p-4 rounded-xl border border-slate-700/60 text-xs space-y-2.5">
             <div className="flex justify-between text-slate-400">
-              <span>Chip Processor:</span>
+              <span>Processor:</span>
               <span className="text-slate-200">ESP32-WROOM-32E</span>
             </div>
             <div className="flex justify-between text-slate-400">
-              <span>RAM / Flash:</span>
-              <span className="text-slate-200">520 KB / 4 MB</span>
+              <span>SRAM/Flash:</span>
+              <span className="text-slate-200">520KB / 4MB</span>
             </div>
             <div className="flex justify-between text-slate-400">
               <span>File Storage:</span>
-              <span className="text-amber-400 font-medium">LittleFS (Flash Map)</span>
+              <span className="text-amber-400 font-medium">LittleFS (Wear-Level)</span>
             </div>
 
             {/* LittleFS Explorer Button */}
             <button
               onClick={() => setShowLittleFS(!showLittleFS)}
-              className="mt-1 w-full bg-slate-800/80 hover:bg-slate-800 text-slate-300 py-1 px-2 rounded border border-slate-700/50 flex items-center justify-center gap-1.5 text-[11px] hover:text-white transition-all cursor-pointer"
+              className="mt-1 w-full bg-slate-800 hover:bg-slate-700/80 text-slate-300 py-1.8 px-2 rounded-lg border border-slate-700 transition-all flex items-center justify-center gap-1.5 text-[11px] hover:text-white cursor-pointer"
             >
               <FileText className="w-3.5 h-3.5 text-amber-500" />
-              <span>{showLittleFS ? "Hide" : "Explore"} Storage (/orders.txt)</span>
+              <span>{showLittleFS ? "Close" : "Explore"} Storage (/orders.txt)</span>
             </button>
           </div>
 
-          {/* Golden tactile tactile buttons mock */}
+          {/* Golden tactile buttons mock */}
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={onHardwareButtonOrder}
-              className="group bg-gradient-to-b from-slate-800 to-slate-900 active:from-slate-900 active:to-slate-950 text-slate-200 p-3 rounded-xl border border-slate-700 hover:border-amber-500/60 transition-all flex flex-col items-center justify-center gap-1 text-center shadow-lg relative cursor-pointer"
+              className="group bg-slate-800 hover:bg-slate-750 active:bg-slate-850 text-slate-200 p-3 rounded-xl border border-slate-700 hover:border-amber-500/50 transition-all flex flex-col items-center justify-center gap-2 text-center shadow-lg relative cursor-pointer"
             >
               {/* Golden Outer Ring */}
               <div className="w-7 h-7 rounded-full bg-gradient-to-b from-yellow-300 via-amber-500 to-amber-700 p-0.5 shadow-md flex items-center justify-center group-active:scale-95 transition-transform">
-                <div className="w-full h-full rounded-full bg-slate-900 border border-slate-700 shadow-inner flex items-center justify-center">
+                <div className="w-full h-full rounded-full bg-[#1E293B] border border-slate-700 shadow-inner flex items-center justify-center">
                   <div className="w-3 h-3 rounded-full bg-amber-500/70" />
                 </div>
               </div>
-              <span className="text-[10px] font-semibold text-slate-300 group-hover:text-amber-400">GPIO 12 Button</span>
-              <span className="text-[8px] text-slate-500 uppercase font-mono">Create Order</span>
+              <span className="text-[10px] font-bold text-slate-300 group-hover:text-amber-400">GPIO 12</span>
+              <span className="text-[8px] text-slate-500 uppercase font-mono tracking-wide">Create Order</span>
             </button>
 
             <button
               onClick={onRestart}
-              className="group bg-gradient-to-b from-slate-800 to-slate-900 active:from-slate-900 active:to-slate-950 text-slate-200 p-3 rounded-xl border border-slate-700 hover:border-red-500/60 transition-all flex flex-col items-center justify-center gap-1 text-center shadow-lg relative cursor-pointer"
+              className="group bg-slate-800 hover:bg-slate-750 active:bg-slate-850 text-slate-200 p-3 rounded-xl border border-slate-700 hover:border-red-500/50 transition-all flex flex-col items-center justify-center gap-2 text-center shadow-lg relative cursor-pointer"
             >
               {/* Red EN Button */}
               <div className="w-7 h-7 rounded-full bg-gradient-to-b from-red-400 via-red-600 to-red-800 p-0.5 shadow-md flex items-center justify-center group-active:scale-95 transition-transform">
-                <div className="w-full h-full rounded-full bg-slate-900 border border-slate-700 shadow-inner flex items-center justify-center">
-                  <RotateCcw className="w-3 h-3 text-red-500" />
+                <div className="w-full h-full rounded-full bg-[#1E293B] border border-slate-700 shadow-inner flex items-center justify-center">
+                  <RotateCcw className="w-3 h-3 text-[#EF4444]" />
                 </div>
               </div>
-              <span className="text-[10px] font-semibold text-slate-300 group-hover:text-red-400">EN Button</span>
-              <span className="text-[8px] text-slate-500 uppercase font-mono">Restart Chip</span>
+              <span className="text-[10px] font-bold text-slate-300 group-hover:text-red-400">EN Button</span>
+              <span className="text-[8px] text-slate-500 uppercase font-mono tracking-wide">Restart SoC</span>
             </button>
           </div>
         </div>
@@ -206,8 +206,8 @@ export default function ESP32Mockup({
             exit={{ height: 0, opacity: 0 }}
             className="mt-4 border-t border-slate-800 pt-4 overflow-hidden relative z-10"
           >
-            <div className="bg-slate-950/90 rounded-xl p-3 border border-slate-800/80 font-mono text-[11px] text-slate-300 max-h-[160px] overflow-y-auto">
-              <div className="flex items-center justify-between text-amber-500 border-b border-slate-800 pb-1.5 mb-2">
+            <div className="bg-[#090D16] rounded-xl p-3 border border-slate-850 font-mono text-[11px] text-slate-300 max-h-[160px] overflow-y-auto custom-scrollbar shadow-inner">
+              <div className="flex items-center justify-between text-amber-500 border-b border-slate-850 pb-1.5 mb-2">
                 <span className="flex items-center gap-1">
                   <HardDrive className="w-3.5 h-3.5" />
                   <span>File: /littlefs/orders.txt</span>
@@ -221,8 +221,8 @@ export default function ESP32Mockup({
               ) : (
                 <div className="space-y-1">
                   {bufferedOrders.map((ord, idx) => (
-                    <div key={ord.id} className="text-amber-400/90 hover:bg-slate-900 p-1 rounded transition-colors whitespace-nowrap">
-                      [{idx + 1}] ID:{ord.orderId} | RET:{ord.retailerName.substring(0, 10)}... | PROD:{ord.productName.substring(0, 12)} | QTY:{ord.quantity} | PR:{ord.priority}
+                    <div key={ord.id} className="text-amber-400/90 hover:bg-slate-900/50 p-1.5 rounded transition-colors whitespace-nowrap border-b border-slate-900/40">
+                      [{idx + 1}] ID:{ord.orderId} | RET:{ord.retailerName.substring(0, 8)}... | PROD:{ord.productName.substring(0, 10)} | QTY:{ord.quantity} | PR:{ord.priority}
                     </div>
                   ))}
                 </div>
@@ -234,9 +234,9 @@ export default function ESP32Mockup({
 
       {/* Connection warning in offline state */}
       {!isInternetAvailable && (
-        <div className="absolute inset-x-0 bottom-0 bg-red-500/10 text-red-400 px-4 py-1.5 text-[10px] font-mono border-t border-red-500/20 flex items-center justify-center gap-1">
-          <AlertTriangle className="w-3 h-3 shrink-0 animate-bounce" />
-          <span>OUTAGE ACTIVE: Buffered uploads will start automatic handshake once restored</span>
+        <div className="absolute inset-x-0 bottom-0 bg-[#EF4444]/10 text-[#EF4444] px-4 py-1.5 text-[10px] font-mono border-t border-[#EF4444]/20 flex items-center justify-center gap-1.5">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 animate-bounce" />
+          <span>OUTAGE ACTIVE: Buffering uploads in LittleFS local sector</span>
         </div>
       )}
     </div>

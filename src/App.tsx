@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Cpu,
   Wifi,
@@ -26,7 +26,17 @@ import {
   ShieldCheck,
   Smartphone,
   X,
-  Server
+  Server,
+  Sun,
+  Moon,
+  ChevronRight,
+  ChevronLeft,
+  Trash2,
+  Inbox,
+  Info,
+  Check,
+  Zap,
+  SlidersHorizontal
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useRuralSync, DemoStep } from "./useRuralSync";
@@ -56,9 +66,41 @@ export default function App() {
     addNotification
   } = useRuralSync();
 
+  // Theme state: light or dark
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("theme");
+      if (saved === "light" || saved === "dark") return saved;
+      return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    return "dark";
+  });
+
+  // Apply theme to document element
+  useEffect(() => {
+    const root = window.document.documentElement;
+    const body = window.document.body;
+    if (theme === "dark") {
+      root.classList.add("dark");
+      body.classList.add("dark");
+    } else {
+      root.classList.remove("dark");
+      body.classList.remove("dark");
+    }
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => (prev === "dark" ? "light" : "dark"));
+  };
+
   const [activeTab, setActiveTab] = useState<SidebarTab>("dashboard");
   const [settingsSubTab, setSettingsSubTab] = useState<"general" | "esp32">("general");
   const [copiedCode, setCopiedCode] = useState(false);
+  
+  // Modal State for adding order
+  const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+
   const [orderForm, setOrderForm] = useState({
     productName: "",
     quantity: 1,
@@ -68,8 +110,16 @@ export default function App() {
 
   // Filter & Search state for Orders Page
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"All" | "Pending" | "Synced">("All");
+  const [statusFilter, setStatusFilter] = useState<"All" | "Pending" | "Synced" | "Proposed">("All");
   const [priorityFilter, setPriorityFilter] = useState<"All" | "Low" | "Medium" | "High">("All");
+  
+  // Sorting for Orders Page
+  const [sortField, setSortField] = useState<"timestamp" | "quantity" | "priority">("timestamp");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+
+  // Pagination for Orders Page
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 8;
 
   // Local state for user confirmation triggers
   const [isSubmitLoading, setIsSubmitLoading] = useState(false);
@@ -77,11 +127,11 @@ export default function App() {
   // Common products for quick fill in form
   const sampleProducts = [
     { name: "Solar Irrigation Controller V2", prefix: "Agtech" },
-    { name: "LittleFS Expansion SD Module", prefix: "IoT-Edge" },
+    { name: "LittleFS Expansion SD Module", prefix: "IoT" },
     { name: "Soil Humidity Multi-Probe", prefix: "Sensor" },
-    { name: "High-Yield Wheat Seed Case", prefix: "BioCorp" },
-    { name: "Off-Grid Deep Cycle Battery v4", prefix: "SolarIsle" },
-    { name: "E-Paper Retail Label Tag", prefix: "EdgeSign" }
+    { name: "High-Yield Wheat Seed Case", prefix: "Bio" },
+    { name: "Off-Grid Deep Cycle Battery v4", prefix: "Solar" },
+    { name: "E-Paper Retail Label Tag", prefix: "Edge" }
   ];
 
   // Quick order submission handler
@@ -90,7 +140,7 @@ export default function App() {
     if (!orderForm.productName || !orderForm.retailerName) {
       addNotification("Please fill in all order properties", "warning");
       return;
-    }
+      }
     setIsSubmitLoading(true);
     await addOrder(
       orderForm.productName,
@@ -99,12 +149,14 @@ export default function App() {
       orderForm.priority
     );
     setIsSubmitLoading(false);
+    setIsOrderModalOpen(false);
     // Reset form partially for consecutive additions
-    setOrderForm(prev => ({
-      ...prev,
+    setOrderForm({
       productName: "",
-      quantity: 1
-    }));
+      quantity: 1,
+      retailerName: "",
+      priority: "Medium"
+    });
   };
 
   const fillQuickOrder = (name: string) => {
@@ -128,60 +180,98 @@ export default function App() {
     await addOrder(randomProduct, 1, randomRetailer, randomPriority, true);
   };
 
-  // Filtered orders list for table view
-  const filteredOrders = orders.filter(order => {
-    const matchesSearch =
-      order.orderId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.productName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.retailerName.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesStatus =
-      statusFilter === "All" || order.status === statusFilter;
-    
-    const matchesPriority =
-      priorityFilter === "All" || order.priority === priorityFilter;
+  // Filtered and Sorted orders list for table view
+  const filteredOrders = useMemo(() => {
+    return orders
+      .filter(order => {
+        const matchesSearch =
+          order.orderId.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          order.productName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          order.retailerName.toLowerCase().includes(searchQuery.toLowerCase());
+        
+        const matchesStatus =
+          statusFilter === "All" || order.status === statusFilter;
+        
+        const matchesPriority =
+          priorityFilter === "All" || order.priority === priorityFilter;
 
-    return matchesSearch && matchesStatus && matchesPriority;
-  });
+        return matchesSearch && matchesStatus && matchesPriority;
+      })
+      .sort((a, b) => {
+        let fieldA: any = a[sortField];
+        let fieldB: any = b[sortField];
+
+        if (sortField === "timestamp") {
+          fieldA = new Date(a.timestamp).getTime();
+          fieldB = new Date(b.timestamp).getTime();
+        }
+
+        if (fieldA < fieldB) return sortDirection === "asc" ? -1 : 1;
+        if (fieldA > fieldB) return sortDirection === "asc" ? 1 : -1;
+        return 0;
+      });
+  }, [orders, searchQuery, statusFilter, priorityFilter, sortField, sortDirection]);
+
+  // Paginated orders
+  const paginatedOrders = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredOrders.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredOrders, currentPage]);
+
+  const totalPages = Math.ceil(filteredOrders.length / itemsPerPage) || 1;
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter, priorityFilter]);
 
   // Calculate high-level statistics
   const totalOrdersCount = orders.length;
   const syncedOrdersCount = orders.filter(o => o.status === "Synced").length;
   const pendingOrdersCount = orders.filter(o => o.status === "Pending").length;
   const ordersOnESP32 = orders.filter(o => o.storageLocation === "ESP32 Local Buffer").length;
+  
+  // Outage Protection calculation: currently pending + historically synced from logs
+  const protectedOrdersCount = useMemo(() => {
+    const historicalSyncCount = syncLogs.reduce((acc, log) => acc + log.ordersSynced, 0);
+    return ordersOnESP32 + historicalSyncCount;
+  }, [ordersOnESP32, syncLogs]);
+
   const uptimeSuccess = isInternetAvailable ? "98.4%" : "0.0%";
 
   return (
-    <div className="flex min-h-screen bg-slate-950 text-slate-100 font-sans antialiased overflow-x-hidden relative">
+    <div className="flex min-h-screen bg-slate-50 dark:bg-[#0F172A] text-slate-800 dark:text-slate-100 font-sans antialiased overflow-hidden transition-colors duration-300 relative">
       
-      {/* Absolute Ambient Glass Background Blobs */}
-      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-blue-900/10 blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-emerald-950/10 blur-[120px] pointer-events-none" />
-      <div className="absolute top-[40%] right-[20%] w-[35%] h-[35%] rounded-full bg-purple-900/5 blur-[120px] pointer-events-none" />
+      {/* Background Ambient Blurs */}
+      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-brand-blue/5 dark:bg-brand-blue/10 blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-brand-purple/5 dark:bg-brand-purple/10 blur-[120px] pointer-events-none" />
+      <div className="absolute top-[30%] right-[10%] w-[40%] h-[40%] rounded-full bg-brand-violet/5 dark:bg-brand-violet/5 blur-[150px] pointer-events-none" />
 
-      {/* Main Container */}
-      <div className="flex w-full min-h-screen relative z-10">
+      {/* Main Wrapper */}
+      <div className="flex w-full h-screen p-4 gap-4 relative z-10 overflow-hidden">
         
-        {/* Left Sidebar Menu */}
-        <aside className="w-72 shrink-0 bg-slate-950/80 backdrop-blur-xl border-r border-slate-800/60 p-6 flex flex-col justify-between">
+        {/* Floating Sidebar Navigation */}
+        <aside className="w-72 shrink-0 bg-white/80 dark:bg-[#1E293B]/80 backdrop-blur-xl border border-slate-200/60 dark:border-slate-800/60 rounded-3xl p-6 flex flex-col justify-between shadow-xl transition-all duration-300">
           <div>
-            {/* Logo area */}
+            {/* Logo Area */}
             <div className="flex items-center gap-3.5 mb-8">
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-700 rounded-xl flex items-center justify-center text-white font-bold font-display shadow-lg shadow-blue-500/20">
-                ⚡
+              <div className="w-10 h-10 bg-gradient-to-tr from-[#6C3BFF] via-[#7F5AF0] to-[#5B7CFA] rounded-xl flex items-center justify-center text-white shadow-lg shadow-brand-purple/20">
+                <Zap className="w-5 h-5 fill-current" />
               </div>
               <div>
-                <span className="text-xs text-blue-400 font-mono font-bold tracking-widest leading-none block">EDGE COMPUTING</span>
-                <h1 className="text-xl font-bold font-display tracking-tight text-white leading-tight">
+                <span className="text-[10px] text-brand-purple dark:text-brand-violet font-mono font-bold tracking-widest leading-none block uppercase">
+                  Edge Gateway
+                </span>
+                <h1 className="text-xl font-bold font-display tracking-tight text-slate-900 dark:text-white leading-tight">
                   RuralSync
                 </h1>
               </div>
             </div>
 
-            {/* Navigation links */}
-            <div className="space-y-1.5">
-              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block px-3 mb-2.5">
-                Core Workspace
+            {/* Navigation tabs */}
+            <div className="space-y-1">
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block px-3 mb-2">
+                Core Operations
               </span>
 
               {[
@@ -195,18 +285,18 @@ export default function App() {
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id as SidebarTab)}
-                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm transition-all duration-200 cursor-pointer ${
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 cursor-pointer ${
                       isActive
-                        ? "bg-blue-600/10 text-blue-400 font-medium border border-blue-500/20 shadow-md shadow-blue-900/5"
-                        : "text-slate-400 hover:text-white hover:bg-slate-900/40 border border-transparent"
+                        ? "bg-gradient-to-r from-brand-purple/10 to-brand-blue/10 dark:from-brand-purple/20 dark:to-brand-blue/20 text-brand-purple dark:text-brand-blue border border-brand-purple/20 dark:border-brand-purple/30 shadow-sm"
+                        : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/60 dark:hover:bg-slate-800/40 border border-transparent"
                     }`}
                   >
                     <span className="flex items-center gap-3">
-                      <Icon className={`w-4 h-4 ${isActive ? "text-blue-400" : "text-slate-400"}`} />
+                      <Icon className={`w-4 h-4 ${isActive ? "text-brand-purple dark:text-brand-blue" : "text-slate-400 dark:text-slate-500"}`} />
                       <span>{tab.label}</span>
                     </span>
                     {tab.badge && (
-                      <span className="bg-amber-400 text-slate-950 font-bold font-mono text-[10px] px-1.5 py-0.5 rounded-full animate-pulse">
+                      <span className="bg-amber-500 dark:bg-amber-400 text-slate-950 font-bold font-mono text-[10px] px-2 py-0.5 rounded-full shadow-inner animate-pulse">
                         {tab.badge}
                       </span>
                     )}
@@ -214,16 +304,14 @@ export default function App() {
                 );
               })}
 
-              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block px-3 pt-5 mb-2.5">
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block px-3 pt-5 mb-2">
                 IoT Edge System
               </span>
 
               {[
                 { id: "monitoring", label: "ESP32 Device Monitor", icon: Cpu },
-                { id: "control", label: "IoT Control Center", icon: Smartphone },
-                { id: "analytics", label: "Analytics Suite", icon: BarChart3 },
-                { id: "history", label: "Sync History Logs", icon: History },
-                { id: "settings", label: "System Setup", icon: SettingsIcon }
+                { id: "analytics", label: "Performance Analytics", icon: BarChart3 },
+                { id: "control", label: "Demo Simulation", icon: Smartphone }
               ].map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
@@ -231,14 +319,14 @@ export default function App() {
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id as SidebarTab)}
-                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm transition-all duration-200 cursor-pointer ${
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 cursor-pointer ${
                       isActive
-                        ? "bg-blue-600/10 text-blue-400 font-medium border border-blue-500/20"
-                        : "text-slate-400 hover:text-white hover:bg-slate-900/40 border border-transparent"
+                        ? "bg-gradient-to-r from-brand-purple/10 to-brand-blue/10 dark:from-brand-purple/20 dark:to-brand-blue/20 text-brand-purple dark:text-brand-blue border border-brand-purple/20 dark:border-brand-purple/30 shadow-sm"
+                        : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/60 dark:hover:bg-slate-800/40 border border-transparent"
                     }`}
                   >
                     <span className="flex items-center gap-3">
-                      <Icon className={`w-4 h-4 ${isActive ? "text-blue-400" : "text-slate-400"}`} />
+                      <Icon className={`w-4 h-4 ${isActive ? "text-brand-purple dark:text-brand-blue" : "text-slate-400 dark:text-slate-500"}`} />
                       <span>{tab.label}</span>
                     </span>
                   </button>
@@ -247,85 +335,117 @@ export default function App() {
             </div>
           </div>
 
-          {/* Quick ESP32 Status Card on Bottom Left */}
-          <div className="space-y-4 pt-6 border-t border-slate-800/60">
-            <div className="bg-slate-900/40 backdrop-blur-md rounded-2xl p-4 border border-slate-800/80">
+          {/* Sidebar Bottom Widgets */}
+          <div className="space-y-4 pt-6 border-t border-slate-100 dark:border-slate-800">
+            {/* Quick Status Info */}
+            <div className="bg-slate-50 dark:bg-slate-900/40 rounded-2xl p-4 border border-slate-100 dark:border-slate-800">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                  Signal & Latency
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest">
+                  Signal Strength
                 </span>
                 <span
                   className={`w-2.5 h-2.5 rounded-full ${
                     isInternetAvailable
-                      ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"
-                      : "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]"
+                      ? "bg-[#10B981] shadow-[0_0_8px_rgba(16,185,129,0.8)]"
+                      : "bg-[#EF4444] shadow-[0_0_8px_rgba(239,68,68,0.8)]"
                   }`}
                 />
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-300 font-mono">
+                <span className="text-xs text-slate-600 dark:text-slate-300 font-mono font-medium">
                   {deviceStatus ? deviceStatus.deviceId : "ESP32-RuralSync"}
                 </span>
-                <span className="text-[10px] bg-slate-800 text-slate-400 font-mono px-1.5 py-0.5 rounded">
-                  {isInternetAvailable ? "52ms" : "Offline"}
-                </span>
-              </div>
-              <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
-                <span>Buffer Pool</span>
-                <span className="text-amber-400 font-bold font-mono">
-                  {pendingOrdersCount} orders waiting
+                <span className="text-[10px] bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-mono px-2 py-0.5 rounded font-bold">
+                  {isInternetAvailable ? "-64 dBm" : "Offline"}
                 </span>
               </div>
             </div>
 
-            {/* Small Footer metadata */}
-            <div className="text-[10px] text-slate-500 text-center font-mono leading-relaxed">
-              RuralSync Edge Platform v1.2.0<br/>
-              Safe Fail-Safe Protocol Enabled
+            {/* Theme & Settings Controls */}
+            <div className="flex items-center justify-between gap-2">
+              {/* Theme Switcher Button */}
+              <button
+                onClick={toggleTheme}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 py-2 px-3 rounded-xl border border-slate-200/50 dark:border-slate-750 transition-all flex items-center justify-center gap-2 text-xs font-semibold cursor-pointer"
+              >
+                {theme === "dark" ? (
+                  <>
+                    <Sun className="w-4 h-4 text-amber-400" />
+                    <span>Light Mode</span>
+                  </>
+                ) : (
+                  <>
+                    <Moon className="w-4 h-4 text-brand-purple" />
+                    <span>Dark Mode</span>
+                  </>
+                )}
+              </button>
+
+              {/* Settings Gear Button */}
+              <button
+                onClick={() => {
+                  setActiveTab("settings");
+                  setSettingsSubTab("general");
+                }}
+                className={`p-2 rounded-xl border transition-all cursor-pointer ${
+                  activeTab === "settings"
+                    ? "bg-brand-purple/10 text-brand-purple border-brand-purple/20"
+                    : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 border-slate-200/50 dark:border-slate-750"
+                }`}
+                title="System Setup"
+              >
+                <SettingsIcon className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="text-[10px] text-slate-400 dark:text-slate-650 text-center font-mono leading-relaxed">
+              RuralSync v1.2.0 • Fail-Safe active
             </div>
           </div>
         </aside>
 
-        {/* Root content view */}
-        <main className="flex-1 flex flex-col min-h-screen bg-slate-950 relative overflow-y-auto">
+        {/* Main Workspace Frame */}
+        <main className="flex-1 bg-white dark:bg-[#1E293B] border border-slate-200/60 dark:border-slate-800/60 rounded-3xl flex flex-col overflow-hidden shadow-xl transition-all duration-300">
           
-          {/* Top Navbar Header */}
-          <header className="h-20 border-b border-slate-900/80 bg-slate-950/40 backdrop-blur-md shrink-0 flex items-center justify-between px-8 z-20">
+          {/* Main Top Header */}
+          <header className="h-20 border-b border-slate-100 dark:border-slate-800/80 bg-white/60 dark:bg-[#1E293B]/60 backdrop-blur-md shrink-0 flex items-center justify-between px-8 z-20">
             <div className="flex items-center gap-4">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest select-none">
-                {activeTab.toUpperCase()} FRAMEWORK
+              <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest select-none">
+                {activeTab === "settings" ? "Configuration Panel" : `${activeTab} Workspace`}
               </span>
-              <div className="h-4 w-px bg-slate-800" />
+              <div className="h-4 w-px bg-slate-200 dark:bg-slate-800" />
+              
+              {/* Connectivity Badge */}
               <div
-                className={`text-[11px] px-3 py-1 rounded-full font-bold border flex items-center gap-2 select-none ${
+                className={`text-[11px] px-3.5 py-1.5 rounded-full font-bold border flex items-center gap-2 select-none transition-all duration-300 ${
                   isInternetAvailable
-                    ? "text-emerald-400 bg-emerald-500/5 border-emerald-500/10"
-                    : "text-red-400 bg-red-500/5 border-red-500/10"
+                    ? "text-[#10B981] bg-emerald-500/10 border-emerald-500/20"
+                    : "text-[#EF4444] bg-red-500/10 border-red-500/20"
                 }`}
               >
-                <Wifi className="w-3.5 h-3.5" />
+                <span className={`w-2 h-2 rounded-full ${isInternetAvailable ? "bg-[#10B981] animate-pulse" : "bg-[#EF4444] animate-bounce"}`} />
                 <span>
                   {isInternetAvailable
                     ? "CLOUD ENDPOINT ONLINE • STABLE"
-                    : "OUTAGE PROTOCOL INJECTED • LOCAL STORAGE ONLY"}
+                    : "OUTAGE PROTOCOL INJECTED • LOCAL BUFFERING"}
                 </span>
               </div>
             </div>
 
-            <div className="flex items-center gap-4">
-              {/* Reset Database and Demo trigger quick controls */}
+            <div className="flex items-center gap-3">
+              {/* Quick Actions */}
               <button
                 onClick={resetDemo}
-                className="bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white px-3 py-1.5 rounded-xl border border-slate-800 text-xs font-medium flex items-center gap-1.5 transition-all text-slate-400"
+                className="bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 px-3.5 py-2 rounded-xl border border-slate-200/60 dark:border-slate-700 text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer"
               >
-                <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+                <RotateCcw className="w-3.5 h-3.5" />
                 Reset Demo DB
               </button>
 
               <button
                 onClick={runFullDemo}
                 disabled={demoActive}
-                className={`bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-lg shadow-blue-900/30 font-display tracking-wide flex items-center gap-2 transition-all ${
+                className={`bg-gradient-to-r from-brand-purple to-brand-blue text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-md shadow-brand-purple/20 hover:opacity-95 font-display tracking-wide flex items-center gap-2 transition-all cursor-pointer ${
                   demoActive ? "opacity-50 cursor-not-allowed" : ""
                 }`}
               >
@@ -335,114 +455,64 @@ export default function App() {
             </div>
           </header>
 
-          {/* Project Objective Banner */}
-          <div className="bg-gradient-to-r from-blue-950/40 via-slate-900/40 to-slate-950 border-b border-slate-900 px-8 py-3.5 text-xs text-blue-300 flex items-center justify-between">
+          {/* Project Executive Pitch Banner */}
+          <div className="bg-slate-50/50 dark:bg-slate-900/30 border-b border-slate-100 dark:border-slate-850 px-8 py-3 text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <span className="p-1 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded font-mono font-bold uppercase text-[9px]">
-                MISSION
+              <span className="px-2 py-0.5 bg-brand-purple/10 dark:bg-brand-purple/20 text-brand-purple dark:text-brand-violet rounded font-mono font-bold uppercase text-[9px]">
+                Product Mission
               </span>
               <p className="italic">
-                "Enabling reliable retail operations in rural areas through ESP32-powered offline-first order management and automatic synchronization."
+                "Resilient, offline-first transaction buffering inside local LittleFS partitions with self-healing cloud synchronization."
               </p>
             </div>
-            <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider shrink-0 select-none">
-              IoT Entry #4829
+            <div className="text-[10px] text-slate-400 dark:text-slate-600 font-bold uppercase tracking-wider shrink-0 select-none font-mono">
+              IoT System Entry #4829
             </div>
           </div>
 
-          <div className="flex-1 p-8 space-y-8 z-10 max-w-7xl w-full mx-auto">
+          {/* Dashboard Main Workspace Viewport */}
+          <div className="flex-1 overflow-y-auto p-8 custom-scrollbar space-y-8">
             
-            {/* KPI grid panel */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-slate-900/30 backdrop-blur-md border border-slate-800/80 p-5 rounded-2xl">
-                <span className="text-[11px] text-slate-400 uppercase tracking-widest block font-medium">
-                  Total Orders Created
-                </span>
-                <p className="text-3xl font-display font-bold mt-1.5 text-white">
-                  {totalOrdersCount}
-                </p>
-                <div className="mt-2.5 text-[10px] text-emerald-400 font-bold uppercase flex items-center gap-1">
-                  <span>● Active DB Instances</span>
-                </div>
-              </div>
-
-              <div className="bg-slate-900/30 backdrop-blur-md border border-slate-800/80 p-5 rounded-2xl">
-                <span className="text-[11px] text-slate-400 uppercase tracking-widest block font-medium">
-                  Synced to Cloud
-                </span>
-                <p className="text-3xl font-display font-medium mt-1.5 text-emerald-400">
-                  {syncedOrdersCount}
-                </p>
-                <div className="mt-2.5 text-[10px] text-slate-400 font-bold uppercase">
-                  Storage location = Cloud
-                </div>
-              </div>
-
-              <div className="bg-slate-900/30 backdrop-blur-md border border-slate-800/80 p-5 rounded-2xl">
-                <span className="text-[11px] text-slate-400 uppercase tracking-widest block font-medium animate-pulse">
-                  Unsynced Pending Queue
-                </span>
-                <p className={`text-3xl font-display font-semibold mt-1.5 ${pendingOrdersCount > 0 ? "text-amber-400 font-bold animate-bounce" : "text-slate-500"}`}>
-                  {pendingOrdersCount}
-                </p>
-                <div className="mt-2.5 text-[10px] text-amber-500/90 font-bold uppercase">
-                  {pendingOrdersCount > 0 ? "Awaiting network link" : "Clear: Buffer synchronized"}
-                </div>
-              </div>
-
-              <div className="bg-blue-600 p-5 rounded-2xl shadow-xl shadow-blue-900/20 text-white relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 rounded-full translate-x-8 -translate-y-8 blur-lg" />
-                <span className="text-[11px] text-blue-100 uppercase tracking-widest block font-medium">
-                  ESP32 LittleFS Allocation
-                </span>
-                <p className="text-3xl font-display font-bold mt-1.5">
-                  {ordersOnESP32}
-                </p>
-                <span className="mt-2.5 text-[10px] text-blue-200 uppercase font-mono block">
-                  File: /littlefs/orders.txt
-                </span>
-              </div>
-            </div>
-
-            {/* Active Demo Steps Banner */}
+            {/* Automated Demo Stepper banner overlay */}
             <AnimatePresence>
               {demoActive && (
                 <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="bg-slate-900/80 rounded-2xl p-5 border border-blue-500/20"
+                  initial={{ height: 0, opacity: 0, marginBottom: 0 }}
+                  animate={{ height: "auto", opacity: 1, marginBottom: 24 }}
+                  exit={{ height: 0, opacity: 0, marginBottom: 0 }}
+                  className="bg-brand-purple/5 dark:bg-brand-purple/10 rounded-2xl p-5 border border-brand-purple/20 overflow-hidden"
                 >
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
-                    <span className="text-xs text-blue-400 font-bold flex items-center gap-2">
-                      <RefreshCw className="w-4 h-4 animate-spin text-blue-400" />
-                      AUTOMATED COMPETITION DEMONSTRATION IN PROGRESS
+                  <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 mb-4">
+                    <span className="text-xs text-brand-purple dark:text-brand-violet font-bold flex items-center gap-2 uppercase tracking-wider font-display">
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Automated Competition Demonstration Sequence In Progress
                     </span>
-                    <span className="text-[11px] text-slate-400 font-mono">
-                      Step Timer Running
+                    <span className="text-[10px] bg-brand-purple/10 dark:bg-brand-purple/25 text-brand-purple dark:text-brand-violet font-mono px-2 py-0.5 rounded font-bold">
+                      ACTIVE STEP RUNNER
                     </span>
                   </div>
                   
-                  <p className="text-sm font-medium text-slate-200 mb-4 bg-slate-950 p-3 rounded-lg border border-slate-800">
-                    ⚡ {demoMessage}
+                  <p className="text-sm font-medium text-slate-800 dark:text-slate-200 mb-4 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800 font-mono shadow-sm">
+                    ⚡ Current Step Status: <span className="text-brand-purple dark:text-brand-blue">{demoMessage}</span>
                   </p>
 
                   <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
                     {demoSteps.map((step, idx) => (
                       <div
                         key={step.name}
-                        className={`p-2.5 rounded-xl border text-center transition-all ${
+                        className={`p-3 rounded-xl border text-center transition-all ${
                           step.status === "running"
-                            ? "bg-blue-600/20 border-blue-500 shadow-md text-white animate-pulse"
+                            ? "bg-brand-purple/10 border-brand-purple shadow-sm text-brand-purple dark:text-brand-violet animate-pulse"
                             : step.status === "success"
-                            ? "bg-emerald-600/5 border-emerald-500/30 text-emerald-400"
-                            : "bg-slate-950/40 border-slate-800/80 text-slate-500"
+                            ? "bg-emerald-500/10 border-emerald-500/30 text-[#10B981]"
+                            : "bg-slate-100/50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-500"
                         }`}
                       >
-                        <span className="text-[10px] text-slate-400 font-mono block mb-1">
-                          0{idx + 1}. {step.name}
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono block mb-1">
+                          Step 0{idx + 1}
                         </span>
-                        <p className="text-[9px] leading-relaxed line-clamp-2">
+                        <h4 className="text-[11px] font-bold truncate">{step.name}</h4>
+                        <p className="text-[9px] leading-relaxed mt-1 opacity-80 line-clamp-2">
                           {step.description}
                         </p>
                       </div>
@@ -452,291 +522,369 @@ export default function App() {
               )}
             </AnimatePresence>
 
-            {/* Split Screen Dashboard View */}
+            {/* TAB VIEWS SWITCH */}
             <AnimatePresence mode="wait">
               
-              {/* TAB 1: DASHBOARD MAIN */}
+              {/* TAB 1: EXECUTIVE SUMMARY DASHBOARD */}
               {activeTab === "dashboard" && (
                 <motion.div
                   key="tab-dashboard"
                   initial={{ opacity: 0, y: 15 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -15 }}
-                  className="grid grid-cols-1 md:grid-cols-3 gap-6"
+                  className="space-y-8"
                 >
-                  {/* Left Column: ESP32 Hardware Status and Quick Actions */}
-                  <div className="col-span-1 space-y-6">
-                    <ESP32Mockup
-                      status={deviceStatus || {
-                        deviceId: "ESP32-RuralSync-001",
-                        signalStrength: -65,
-                        memoryUsage: 38,
-                        cpuUsage: 12,
-                        uptime: 4850,
-                        status: "ONLINE",
-                        lastHeartbeat: new Date().toISOString(),
-                        ordersStoredLocally: 0,
-                        ordersSynced: 3,
-                        failedSyncAttempts: 0
-                      }}
-                      events={events}
-                      orders={orders}
-                      isInternetAvailable={isInternetAvailable}
-                      onRestart={restartDevice}
-                      onHardwareButtonOrder={handleHardwareGPIONode}
-                    />
-
-                    {/* Quick Simulation Board */}
-                    <div className="bg-slate-900/20 backdrop-blur-md rounded-3xl p-6 border border-slate-800/80">
-                      <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-800/60">
-                        <h3 className="text-xs font-bold uppercase tracking-widest text-slate-300">
-                          Hardware Jitter Tool
-                        </h3>
-                        <span className="text-[11px] text-blue-400 font-mono">Edge Control</span>
-                      </div>
-
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between text-xs text-slate-400">
-                          <span>Outage Injector State:</span>
-                          <span className={`font-mono ${isInternetAvailable ? "text-emerald-400" : "text-red-400"}`}>
-                            {isInternetAvailable ? "INTERNET_UP" : "INTERNET_OUTAGE"}
-                          </span>
+                  {/* KPI Executive Summary Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+                    
+                    {/* KPI 1 */}
+                    <div className="bg-white dark:bg-[#1E293B] border border-slate-250/50 dark:border-slate-850 p-6 rounded-2xl shadow-sm hover-lift flex flex-col justify-between h-36">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-slate-500 dark:text-slate-450 uppercase font-bold tracking-wider">
+                          Total Orders Created
+                        </span>
+                        <div className="p-2 bg-brand-purple/10 rounded-xl text-brand-purple">
+                          <ListOrdered className="w-4 h-4" />
                         </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            onClick={() => toggleNetworkState(false)}
-                            className="bg-red-600 hover:bg-red-700 text-white text-[11px] font-bold py-2 rounded-xl transition-all cursor-pointer"
-                          >
-                            Kill Internet
-                          </button>
-                          <button
-                            onClick={() => toggleNetworkState(true)}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold py-2 rounded-xl transition-all cursor-pointer"
-                          >
-                            Restore Internet
-                          </button>
-                        </div>
-                        <button
-                          onClick={triggerSync}
-                          className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 py-3 rounded-xl border border-slate-700/60 transition-all font-display text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer mt-2"
-                        >
-                          <RefreshCw className="w-3.5 h-3.5" />
-                          Initiate Cloud Synchronization
-                        </button>
                       </div>
+                      <div className="flex items-baseline gap-2 mt-2">
+                        <span className="text-3xl font-bold font-display text-slate-900 dark:text-white">
+                          {totalOrdersCount}
+                        </span>
+                        <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">
+                          transactions
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[#10B981] font-semibold flex items-center gap-1 mt-1">
+                        <TrendingUp className="w-3.5 h-3.5" />
+                        <span>Active Database Instances</span>
+                      </p>
+                    </div>
+
+                    {/* KPI 2 */}
+                    <div className="bg-white dark:bg-[#1E293B] border border-slate-250/50 dark:border-slate-850 p-6 rounded-2xl shadow-sm hover-lift flex flex-col justify-between h-36">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-slate-500 dark:text-slate-450 uppercase font-bold tracking-wider">
+                          Synced to Cloud
+                        </span>
+                        <div className="p-2 bg-emerald-500/10 rounded-xl text-[#10B981]">
+                          <CheckCircle className="w-4 h-4" />
+                        </div>
+                      </div>
+                      <div className="flex items-baseline gap-2 mt-2">
+                        <span className="text-3xl font-bold font-display text-[#10B981]">
+                          {syncedOrdersCount}
+                        </span>
+                        <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">
+                          verified
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono uppercase tracking-wide">
+                        Target Storage = Cloud
+                      </p>
+                    </div>
+
+                    {/* KPI 3 */}
+                    <div className="bg-white dark:bg-[#1E293B] border border-slate-250/50 dark:border-slate-850 p-6 rounded-2xl shadow-sm hover-lift flex flex-col justify-between h-36">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-slate-500 dark:text-slate-450 uppercase font-bold tracking-wider">
+                          Pending Buffer Queue
+                        </span>
+                        <div className={`p-2 rounded-xl ${pendingOrdersCount > 0 ? "bg-amber-500/10 text-amber-500 animate-pulse" : "bg-slate-100 dark:bg-slate-800 text-slate-400"}`}>
+                          <Database className="w-4 h-4" />
+                        </div>
+                      </div>
+                      <div className="flex items-baseline gap-2 mt-2">
+                        <span className={`text-3xl font-bold font-display ${pendingOrdersCount > 0 ? "text-amber-500 font-bold" : "text-slate-400 dark:text-slate-500"}`}>
+                          {pendingOrdersCount}
+                        </span>
+                        <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">
+                          cached
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-450 mt-1">
+                        {pendingOrdersCount > 0 ? "Awaiting telecom handshake" : "Buffer synchronized"}
+                      </p>
+                    </div>
+
+                    {/* KPI 4 */}
+                    <div className="bg-gradient-to-br from-brand-purple to-brand-blue border-none p-6 rounded-2xl shadow-lg shadow-brand-purple/10 hover-lift text-white flex flex-col justify-between h-36 relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 rounded-full translate-x-6 -translate-y-6 blur-lg" />
+                      <div className="flex items-center justify-between relative z-10">
+                        <span className="text-xs text-purple-100 uppercase font-bold tracking-wider">
+                          Protected Offline
+                        </span>
+                        <div className="p-2 bg-white/10 rounded-xl text-white">
+                          <ShieldCheck className="w-4 h-4" />
+                        </div>
+                      </div>
+                      <div className="flex items-baseline gap-2 mt-2 relative z-10">
+                        <span className="text-3xl font-extrabold font-display">
+                          {protectedOrdersCount}
+                        </span>
+                        <span className="text-xs text-purple-100 font-medium">
+                          orders
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-purple-100 font-semibold relative z-10 flex items-center gap-1">
+                        <span>↑ 100% Data Protection Guarantee</span>
+                      </p>
                     </div>
                   </div>
 
-                  {/* Middle Column: Active Order Stream and Dynamic Statistics */}
-                  <div className="col-span-2 space-y-6">
-                    {/* Compact Add Order quick Form */}
-                    <div className="bg-slate-900/10 backdrop-blur-md rounded-3xl p-6 border border-slate-800/80">
-                      <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-850">
-                        <h3 className="text-sm font-bold text-slate-200 uppercase tracking-widest font-display">
-                          Fast Merchant Terminal
-                        </h3>
-                        <span className="text-xs bg-blue-950 text-blue-400 px-2.5 py-0.5 rounded font-mono">
-                          GPIO 04 Map
-                        </span>
+                  {/* Dashboard Layout Splits */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    
+                    {/* Left Pane: ESP32 Edge Device Status Hero & Timeline */}
+                    <div className="col-span-1 space-y-6">
+                      
+                      {/* ESP32 Status Card wrapper */}
+                      <ESP32Mockup
+                        status={deviceStatus || {
+                          deviceId: "ESP32-RuralSync-001",
+                          signalStrength: -65,
+                          memoryUsage: 38,
+                          cpuUsage: 12,
+                          uptime: 4850,
+                          status: "ONLINE",
+                          lastHeartbeat: new Date().toISOString(),
+                          ordersStoredLocally: 0,
+                          ordersSynced: 3,
+                          failedSyncAttempts: 0
+                        }}
+                        events={events}
+                        orders={orders}
+                        isInternetAvailable={isInternetAvailable}
+                        onRestart={restartDevice}
+                        onHardwareButtonOrder={handleHardwareGPIONode}
+                      />
+
+                      {/* Interactive Connectivity Lifecycle Timeline */}
+                      <div className="bg-white dark:bg-[#1E293B] border border-slate-200/60 dark:border-slate-800/60 rounded-3xl p-6 shadow-sm">
+                        <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+                          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 font-display">
+                            How RuralSync Works
+                          </h3>
+                          <span className="text-[10px] text-brand-purple dark:text-brand-violet font-mono uppercase font-bold">Lifecycle</span>
+                        </div>
+
+                        {/* Steps timeline */}
+                        <div className="space-y-4">
+                          {[
+                            {
+                              title: "Internet Outage Cut",
+                              desc: "Local fiber/cell link goes down. The gateway enters failover state.",
+                              stateActive: !isInternetAvailable,
+                              icon: WifiOff,
+                              color: "bg-[#EF4444]"
+                            },
+                            {
+                              title: "Offline Buffering",
+                              desc: "Sales orders are logged inside ESP32 LittleFS flash sector (/orders.txt).",
+                              stateActive: !isInternetAvailable && pendingOrdersCount > 0,
+                              icon: HardDrive,
+                              color: "bg-[#F59E0B]"
+                            },
+                            {
+                              title: "Telecommunications Restored",
+                              desc: "Internet returns. Edge gateway automatically recognizes host handshake.",
+                              stateActive: isInternetAvailable,
+                              icon: Wifi,
+                              color: "bg-[#10B981]"
+                            },
+                            {
+                              title: "Automated Data Upload",
+                              desc: " heartbeats detect the link and migrate the buffer files.",
+                              stateActive: isInternetAvailable && deviceStatus?.status === "SYNCING",
+                              icon: RefreshCw,
+                              color: "bg-[#3B82F6]"
+                            },
+                            {
+                              title: "100% Sync Clear",
+                              desc: "Transactions loaded to Cloud. LittleFS buffer partition is cleaned.",
+                              stateActive: isInternetAvailable && pendingOrdersCount === 0 && orders.length > 0,
+                              icon: CheckCircle,
+                              color: "bg-gradient-to-r from-brand-purple to-brand-blue"
+                            }
+                          ].map((step, idx) => {
+                            const StepIcon = step.icon;
+                            return (
+                              <div key={idx} className={`flex gap-3.5 transition-opacity duration-300 ${step.stateActive ? "opacity-100" : "opacity-45"}`}>
+                                <div className="flex flex-col items-center shrink-0">
+                                  <div className={`w-8 h-8 rounded-xl ${step.color} text-white flex items-center justify-center shadow-md`}>
+                                    <StepIcon className="w-4 h-4" />
+                                  </div>
+                                  {idx < 4 && <div className="w-0.5 h-8 bg-slate-200 dark:bg-slate-800 my-1" />}
+                                </div>
+                                <div className="pt-0.5">
+                                  <h4 className="text-xs font-bold text-slate-850 dark:text-slate-100 flex items-center gap-1.5">
+                                    {step.title}
+                                    {step.stateActive && <span className="w-1.5 h-1.5 rounded-full bg-brand-purple animate-ping" />}
+                                  </h4>
+                                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
+                                    {step.desc}
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
 
-                      <form onSubmit={handleOrderSubmit} className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <label className="text-[10px] text-slate-400 uppercase tracking-wider block mb-1">
-                              Retailer Shop Name
-                            </label>
-                            <input
-                              type="text"
-                              required
-                              placeholder="e.g. Anand Rural Cooperatives"
-                              value={orderForm.retailerName}
-                              onChange={(e) => setOrderForm(prev => ({ ...prev, retailerName: e.target.value }))}
-                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500 transition-all"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="text-[10px] text-slate-400 uppercase tracking-wider block mb-1">
-                              Order Item Product Descr
-                            </label>
-                            <input
-                              type="text"
-                              required
-                              placeholder="e.g. Solar Pump Inverter Kit"
-                              value={orderForm.productName}
-                              onChange={(e) => setOrderForm(prev => ({ ...prev, productName: e.target.value }))}
-                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500 transition-all"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label className="text-[10px] text-slate-400 uppercase tracking-wider block mb-1">
-                              Quantity Pack Count
-                            </label>
-                            <input
-                              type="number"
-                              min="1"
-                              max="1000"
-                              required
-                              value={orderForm.quantity}
-                              onChange={(e) => setOrderForm(prev => ({ ...prev, quantity: Number(e.target.value) }))}
-                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500 transition-all font-mono"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="text-[10px] text-slate-400 uppercase tracking-wider block mb-1">
-                              Order Delivery Priority
-                            </label>
-                            <select
-                              value={orderForm.priority}
-                              onChange={(e) => setOrderForm(prev => ({ ...prev, priority: e.target.value as "Low" | "Medium" | "High" }))}
-                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500 transition-all cursor-pointer"
-                            >
-                              <option value="Low">Low</option>
-                              <option value="Medium">Medium</option>
-                              <option value="High">High</option>
-                            </select>
-                          </div>
-                        </div>
-
-                        {/* Quick suggestions to save typing */}
-                        <div className="flex flex-wrap gap-1.5">
-                          <span className="text-[9px] text-slate-500 font-mono flex items-center pt-1 pr-1">Q-Stock:</span>
-                          {sampleProducts.map((p) => (
-                            <button
-                              key={p.name}
-                              type="button"
-                              onClick={() => fillQuickOrder(p.name)}
-                              className="text-[9px] bg-slate-900 hover:bg-slate-800 text-slate-300 px-2 py-1 rounded transition-colors border border-slate-800"
-                            >
-                              + {p.name}
-                            </button>
-                          ))}
-                        </div>
-
-                        <div className="flex items-center justify-between pt-2">
-                          <p className="text-[10px] text-slate-400 max-w-sm">
-                            <span className="text-amber-500 font-bold">INFO:</span> If Internet falls offline, this submission is routed instantly to LittleFS partition and marked <span className="bg-amber-400 text-slate-950 px-1 rounded text-[9px] font-bold">Pending</span>.
-                          </p>
-                          <button
-                            type="submit"
-                            disabled={isSubmitLoading}
-                            className="bg-blue-600 hover:bg-blue-500 text-white font-bold px-5 py-2.5 rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-md shadow-blue-900/30 cursor-pointer"
-                          >
-                            <PlusCircle className="w-4 h-4" />
-                            {isSubmitLoading ? "Saving..." : "Create Order"}
-                          </button>
-                        </div>
-                      </form>
                     </div>
 
-                    {/* Active queues and Activity streams log */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Right Pane: Live Activity Feed & Live Orders Queue */}
+                    <div className="col-span-2 space-y-6">
                       
-                      {/* Active Live Activity Feed */}
-                      <div className="bg-slate-900/10 backdrop-blur-md rounded-3xl p-5 border border-slate-800/80 flex flex-col h-[320px]">
-                        <div className="flex items-center justify-between mb-4 shrink-0 border-b border-slate-850 pb-2">
-                          <span className="text-xs font-bold text-slate-200 uppercase tracking-widest flex items-center gap-2">
-                            <Activity className="w-4 h-4 text-blue-400" />
-                            Live Activity Feed
-                          </span>
-                          <span className="text-[9px] bg-slate-900 text-slate-400 px-2 py-0.5 rounded font-mono animate-pulse">
-                            STREAM LOGS
-                          </span>
+                      {/* Top Action Bar */}
+                      <div className="flex items-center justify-between bg-white dark:bg-[#1E293B] border border-slate-200/60 dark:border-slate-800/60 p-4 rounded-2xl shadow-sm">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-brand-purple/10 rounded-xl text-brand-purple">
+                            <PlusCircle className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">Merchant Terminal Action</h4>
+                            <p className="text-[10px] text-slate-500">Fast transaction creation portal</p>
+                          </div>
                         </div>
-                        
-                        <div className="flex-1 overflow-y-auto space-y-3.5 pr-2 custom-scrollbar">
-                          {events.length === 0 ? (
-                            <p className="text-xs text-slate-500 text-center py-10 italic">
-                              Listening for hardware status events...
-                            </p>
-                          ) : (
-                            events.slice(0, 10).map((evt) => {
-                              // Match styling depending on keywords
-                              const text = evt.event.toLowerCase();
-                              let colorClass = "bg-blue-500";
-                              if (text.includes("lost") || text.includes("outage") || text.includes("fail")) {
-                                colorClass = "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]";
-                              } else if (text.includes("restored") || text.includes("completed") || text.includes("booted") || text.includes("success")) {
-                                colorClass = "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]";
-                              } else if (text.includes("buffered") || text.includes("restart")) {
-                                colorClass = "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]";
-                              }
 
-                              return (
-                                <div key={evt.id} className="flex gap-3 text-xs">
-                                  <div className="w-px bg-slate-800 relative left-1.5 my-1 shrink-0">
-                                    <div className={`absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full ${colorClass}`} />
-                                  </div>
-                                  <div className="pl-3.5">
-                                    <p className="font-semibold text-slate-200 leading-snug">{evt.event}</p>
-                                    <p className="text-[9px] text-slate-400 mt-0.5 font-mono">
-                                      {new Date(evt.timestamp).toLocaleTimeString()} • Signal: -64dBm
-                                    </p>
-                                  </div>
-                                </div>
-                              );
-                            })
-                          )}
-                        </div>
+                        <button
+                          onClick={() => setIsOrderModalOpen(true)}
+                          className="bg-brand-purple hover:bg-brand-purple/95 text-white text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-1.5 shadow transition-all cursor-pointer"
+                        >
+                          <PlusCircle className="w-4 h-4" />
+                          <span>Create Retailer Order</span>
+                        </button>
                       </div>
 
-                      {/* Quick Orders List Snapshot */}
-                      <div className="bg-slate-900/10 backdrop-blur-md rounded-3xl p-5 border border-slate-800/80 flex flex-col h-[320px]">
-                        <div className="flex items-center justify-between mb-4 shrink-0 border-b border-slate-850 pb-2">
-                          <span className="text-xs font-bold text-slate-200 uppercase tracking-widest flex items-center gap-2">
-                            <ListOrdered className="w-4 h-4 text-emerald-400" />
-                            Live Orders Queue
-                          </span>
-                          <button
-                            onClick={() => setActiveTab("orders")}
-                            className="text-[10px] text-blue-400 hover:underline flex items-center gap-1 font-semibold cursor-pointer"
-                          >
-                            Detailed Queue <ArrowRight className="w-3 h-3" />
-                          </button>
+                      {/* Event Log & Orders Side by Side */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        
+                        {/* Live Activity Feed */}
+                        <div className="bg-white dark:bg-[#1E293B] border border-slate-200/60 dark:border-slate-800/60 rounded-3xl p-6 flex flex-col h-[400px] shadow-sm">
+                          <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 dark:border-slate-800 shrink-0">
+                            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 font-display flex items-center gap-2">
+                              <Activity className="w-4 h-4 text-brand-purple" />
+                              Live Event Stream
+                            </h3>
+                            <span className="text-[9px] bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded font-mono font-bold">
+                              TELEMETRY
+                            </span>
+                          </div>
+
+                          <div className="flex-1 overflow-y-auto space-y-4 pr-1 custom-scrollbar">
+                            {events.length === 0 ? (
+                              <p className="text-xs text-slate-400 dark:text-slate-500 text-center py-20 italic">
+                                Listening for telemetry packets...
+                              </p>
+                            ) : (
+                              events.slice(0, 15).map((evt) => {
+                                const text = evt.event.toLowerCase();
+                                let badgeColor = "bg-brand-purple/10 text-brand-purple border-brand-purple/20";
+                                if (text.includes("lost") || text.includes("outage") || text.includes("fail")) {
+                                  badgeColor = "bg-[#EF4444]/10 text-[#EF4444] border-[#EF4444]/20 shadow-[0_0_8px_rgba(239,68,68,0.1)]";
+                                } else if (text.includes("restored") || text.includes("completed") || text.includes("success") || text.includes("approved")) {
+                                  badgeColor = "bg-[#10B981]/10 text-[#10B981] border-[#10B981]/20";
+                                } else if (text.includes("buffered") || text.includes("restarting") || text.includes("proposal")) {
+                                  badgeColor = "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/20";
+                                }
+
+                                return (
+                                  <div key={evt.id} className="flex gap-3 text-xs leading-normal">
+                                    <div className="w-px bg-slate-100 dark:bg-slate-800 relative left-1.5 my-1 shrink-0">
+                                      <div className={`absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full border border-white dark:border-slate-900 ${
+                                        text.includes("lost") ? "bg-[#EF4444]" :
+                                        text.includes("restored") || text.includes("success") ? "bg-[#10B981]" :
+                                        "bg-brand-purple"
+                                      }`} />
+                                    </div>
+                                    <div className="pl-4 flex-1">
+                                      <p className="font-semibold text-slate-800 dark:text-slate-200">{evt.event}</p>
+                                      <div className="flex items-center gap-2 mt-1">
+                                        <span className="text-[9px] text-slate-400 dark:text-slate-500 font-mono">
+                                          {new Date(evt.timestamp).toLocaleTimeString()}
+                                        </span>
+                                        <span className={`text-[8px] font-mono px-1 rounded border uppercase ${badgeColor}`}>
+                                          ESP32 Node
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
                         </div>
 
-                        <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-                          {orders.slice(0, 5).map((order) => (
-                            <div
-                              key={order.id}
-                              className={`p-2.5 rounded-xl border flex items-center justify-between transition-colors ${
-                                order.status === "Pending"
-                                  ? "bg-amber-500/5 border-amber-500/20"
-                                  : "bg-slate-950/60 border-slate-800/80"
-                              }`}
+                        {/* Live Orders Queue Preview */}
+                        <div className="bg-white dark:bg-[#1E293B] border border-slate-200/60 dark:border-slate-800/60 rounded-3xl p-6 flex flex-col h-[400px] shadow-sm">
+                          <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 dark:border-slate-800 shrink-0">
+                            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 font-display flex items-center gap-2">
+                              <ListOrdered className="w-4 h-4 text-brand-blue" />
+                              Recent Transactions
+                            </h3>
+                            <button
+                              onClick={() => setActiveTab("orders")}
+                              className="text-[10px] text-brand-purple dark:text-brand-blue hover:underline flex items-center gap-1 font-bold cursor-pointer"
                             >
-                              <div className="min-w-0 pr-2">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-mono text-[10px] text-slate-400 bg-slate-900 px-1.5 py-0.5 rounded">
-                                    {order.orderId}
-                                  </span>
-                                  <span className="font-semibold text-slate-200 text-xs truncate max-w-[120px]">
-                                    {order.productName}
-                                  </span>
-                                </div>
-                                <span className="text-[10px] text-slate-400 truncate block mt-0.5">
-                                  {order.retailerName} (Qty: {order.quantity})
-                                </span>
+                              Explore Queue <ArrowRight className="w-3 h-3" />
+                            </button>
+                          </div>
+
+                          <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 custom-scrollbar">
+                            {orders.length === 0 ? (
+                              <div className="h-full flex flex-col items-center justify-center text-center p-4">
+                                <Inbox className="w-8 h-8 text-slate-300 dark:text-slate-600 mb-2" />
+                                <p className="text-xs text-slate-400 dark:text-slate-500 italic">No orders registered yet</p>
                               </div>
-                              <div className="text-right shrink-0">
-                                <span
-                                  className={`text-[9px] font-bold px-2 py-0.5 rounded-full inline-block ${
-                                    order.status === "Pending"
-                                      ? "bg-amber-400/10 text-amber-400 border border-amber-500/15"
-                                      : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/15"
-                                  }`}
-                                >
-                                  {order.status.toUpperCase()}
-                                </span>
-                              </div>
-                            </div>
-                          ))}
+                            ) : (
+                              orders.slice(0, 6).map((order) => {
+                                const isPending = order.status === "Pending";
+                                const isProposed = order.status === "Proposed";
+                                return (
+                                  <div
+                                    key={order.id}
+                                    className={`p-3 rounded-xl border flex items-center justify-between transition-colors ${
+                                      isPending
+                                        ? "bg-amber-500/[0.03] border-amber-500/25"
+                                        : isProposed
+                                        ? "bg-orange-500/[0.03] border-orange-500/25 animate-pulse"
+                                        : "bg-slate-50 dark:bg-slate-900/30 border-slate-100 dark:border-slate-800"
+                                    }`}
+                                  >
+                                    <div className="min-w-0 pr-2">
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-mono text-[9px] font-bold text-slate-400 dark:text-slate-500 bg-slate-200 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                                          {order.orderId}
+                                        </span>
+                                        <span className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate max-w-[120px]">
+                                          {order.productName}
+                                        </span>
+                                      </div>
+                                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block truncate mt-1">
+                                        {order.retailerName} (Qty: {order.quantity})
+                                      </span>
+                                    </div>
+                                    <div className="shrink-0">
+                                      <span
+                                        className={`text-[9px] font-bold px-2 py-0.5 rounded-full inline-block uppercase tracking-wider ${
+                                          isPending
+                                            ? "bg-amber-100 dark:bg-amber-500/10 text-amber-500 border border-amber-500/20"
+                                            : isProposed
+                                            ? "bg-orange-100 dark:bg-orange-500/10 text-orange-400 border border-orange-500/20"
+                                            : "bg-emerald-100 dark:bg-emerald-500/10 text-[#10B981] border border-emerald-500/20"
+                                        }`}
+                                      >
+                                        {order.status}
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
                         </div>
+
                       </div>
 
                     </div>
@@ -753,141 +901,174 @@ export default function App() {
                   exit={{ opacity: 0, y: -15 }}
                   className="space-y-6"
                 >
-                  <div className="bg-slate-900/10 backdrop-blur-md rounded-3xl p-6 border border-slate-800/80">
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 mb-5 border-b border-slate-850">
+                  <div className="bg-white dark:bg-[#1E293B] border border-slate-200/60 dark:border-slate-800/60 rounded-3xl p-6 shadow-sm">
+                    {/* Header + Filters */}
+                    <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 pb-5 mb-6 border-b border-slate-100 dark:border-slate-800">
                       <div>
-                        <h3 className="text-lg font-bold font-display text-white">
-                          Retailer Orders Queue Database
+                        <h3 className="text-lg font-bold font-display text-slate-900 dark:text-white">
+                          Retailer Transaction Ledger
                         </h3>
-                        <p className="text-xs text-slate-400 mt-1">
-                          Browse, filter, and track status parameters of system transactions.
+                        <p className="text-xs text-slate-500 dark:text-slate-450 mt-1">
+                          Full historical inventory pipeline logged offline or synced to cloud clusters.
                         </p>
                       </div>
 
-                      {/* Filters and search toggles */}
-                      <div className="flex flex-wrap gap-2">
+                      {/* Filters / Search Bar */}
+                      <div className="flex flex-wrap items-center gap-3">
+                        {/* Search */}
                         <div className="relative">
-                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                           <input
                             type="text"
-                            placeholder="Search Order, Retailer..."
+                            placeholder="Search Order ID, Retailer..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-all font-mono"
+                            className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-800 dark:text-white placeholder-slate-450 focus:outline-none focus:border-brand-purple transition-all font-mono shadow-inner w-56"
                           />
                         </div>
 
-                        <select
-                          value={statusFilter}
-                          onChange={(e) => setStatusFilter(e.target.value as "All" | "Pending" | "Synced")}
-                          className="bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-blue-500 cursor-pointer"
-                        >
-                          <option value="All">All Statuses</option>
-                          <option value="Synced">Synced</option>
-                          <option value="Pending">Pending Buffer</option>
-                        </select>
+                        {/* Status Filter */}
+                        <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-2.5 py-1.5">
+                          <Filter className="w-3 h-3 text-slate-400" />
+                          <select
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value as any)}
+                            className="bg-transparent text-slate-700 dark:text-slate-300 text-xs focus:outline-none cursor-pointer font-medium pr-1"
+                          >
+                            <option value="All">All Statuses</option>
+                            <option value="Synced">Synced</option>
+                            <option value="Pending">Pending Buffer</option>
+                            <option value="Proposed">Proposed</option>
+                          </select>
+                        </div>
 
-                        <select
-                          value={priorityFilter}
-                          onChange={(e) => setPriorityFilter(e.target.value as "All" | "Low" | "Medium" | "High")}
-                          className="bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-blue-500 cursor-pointer"
+                        {/* Priority Filter */}
+                        <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-2.5 py-1.5">
+                          <SlidersHorizontal className="w-3 h-3 text-slate-400" />
+                          <select
+                            value={priorityFilter}
+                            onChange={(e) => setPriorityFilter(e.target.value as any)}
+                            className="bg-transparent text-slate-700 dark:text-slate-300 text-xs focus:outline-none cursor-pointer font-medium pr-1"
+                          >
+                            <option value="All">All Priorities</option>
+                            <option value="High">High</option>
+                            <option value="Medium">Medium</option>
+                            <option value="Low">Low</option>
+                          </select>
+                        </div>
+
+                        {/* Create Order Button */}
+                        <button
+                          onClick={() => setIsOrderModalOpen(true)}
+                          className="bg-brand-purple hover:bg-brand-purple/95 text-white text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-1.5 shadow transition-all cursor-pointer"
                         >
-                          <option value="All">All Priorities</option>
-                          <option value="High">High</option>
-                          <option value="Medium">Medium</option>
-                          <option value="Low">Low</option>
-                        </select>
+                          <PlusCircle className="w-3.5 h-3.5" />
+                          <span>New Order</span>
+                        </button>
                       </div>
                     </div>
 
                     {/* Table View */}
-                    <div className="overflow-x-auto rounded-xl border border-slate-850">
+                    <div className="overflow-x-auto rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm bg-white dark:bg-slate-900/10">
                       <table className="w-full text-left border-collapse">
                         <thead>
-                          <tr className="bg-slate-900/60 text-[10px] text-slate-400 uppercase tracking-widest border-b border-slate-800">
-                            <th className="px-5 py-3 font-semibold text-center w-20">No.</th>
-                            <th className="px-5 py-3 font-semibold">Order ID</th>
-                            <th className="px-5 py-3 font-semibold">Product Name</th>
-                            <th className="px-5 py-3 font-semibold">Retailer Name</th>
-                            <th className="px-5 py-3 font-semibold text-center">Qty</th>
-                            <th className="px-5 py-3 font-semibold">Priority</th>
-                            <th className="px-5 py-3 font-semibold">Timestamp</th>
-                            <th className="px-5 py-3 font-semibold text-center">Status</th>
-                            <th className="px-5 py-3 font-semibold text-right">Storage node</th>
+                          <tr className="bg-slate-50 dark:bg-slate-900 text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-widest border-b border-slate-100 dark:border-slate-800">
+                            <th className="px-5 py-3 font-bold text-center w-16">No.</th>
+                            <th className="px-5 py-3 font-bold cursor-pointer hover:text-slate-650" onClick={() => { setSortField("orderId"); setSortDirection(prev => prev === "asc" ? "desc" : "asc"); }}>
+                              Order ID {sortField === "orderId" && (sortDirection === "asc" ? "↑" : "↓")}
+                            </th>
+                            <th className="px-5 py-3 font-bold">Product Name</th>
+                            <th className="px-5 py-3 font-bold">Retailer Name</th>
+                            <th className="px-5 py-3 font-bold text-center cursor-pointer hover:text-slate-650" onClick={() => { setSortField("quantity"); setSortDirection(prev => prev === "asc" ? "desc" : "asc"); }}>
+                              Qty {sortField === "quantity" && (sortDirection === "asc" ? "↑" : "↓")}
+                            </th>
+                            <th className="px-5 py-3 font-bold">Priority</th>
+                            <th className="px-5 py-3 font-bold cursor-pointer hover:text-slate-650" onClick={() => { setSortField("timestamp"); setSortDirection(prev => prev === "asc" ? "desc" : "asc"); }}>
+                              Timestamp {sortField === "timestamp" && (sortDirection === "asc" ? "↑" : "↓")}
+                            </th>
+                            <th className="px-5 py-3 font-bold text-center">Status</th>
+                            <th className="px-5 py-3 font-bold text-right">Storage Node</th>
                           </tr>
                         </thead>
-                        <tbody className="text-xs divide-y divide-slate-850">
-                          {filteredOrders.length === 0 ? (
+                        <tbody className="text-xs divide-y divide-slate-100 dark:divide-slate-850">
+                          {paginatedOrders.length === 0 ? (
                             <tr>
-                              <td colSpan={9} className="text-center py-10 italic text-slate-500 font-sans">
-                                No records match search state or filter configuration.
+                              <td colSpan={9} className="text-center py-20">
+                                <div className="flex flex-col items-center justify-center p-6 text-slate-400 dark:text-slate-500">
+                                  <Inbox className="w-12 h-12 mb-3 stroke-[1.5] text-slate-350 dark:text-slate-700" />
+                                  <h4 className="font-bold text-sm text-slate-750 dark:text-slate-300">No Orders Found</h4>
+                                  <p className="text-xs text-slate-450 mt-1 max-w-sm leading-relaxed">
+                                    No records match your search filters. Create a new retailer order to begin.
+                                  </p>
+                                </div>
                               </td>
                             </tr>
                           ) : (
-                            filteredOrders.map((order, idx) => {
+                            paginatedOrders.map((order, idx) => {
                               const isPending = order.status === "Pending";
                               const isProposed = order.status === "Proposed";
+                              const globalIndex = (currentPage - 1) * itemsPerPage + idx + 1;
                               return (
                                 <tr
                                   key={order.id}
-                                  className={`hover:bg-slate-900/40 transition-colors ${
-                                    isPending ? "bg-amber-400/[0.01]" :
-                                    isProposed ? "bg-orange-500/[0.02]" : ""
+                                  className={`hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors ${
+                                    isPending ? "bg-amber-500/[0.01]" :
+                                    isProposed ? "bg-orange-500/[0.01]" : ""
                                   }`}
                                 >
-                                  <td className="px-5 py-4 text-center text-slate-500 font-mono text-[10px]">
-                                    {idx + 1}
+                                  <td className="px-5 py-4 text-center text-slate-400 font-mono text-[10px]">
+                                    {globalIndex}
                                   </td>
-                                  <td className="px-5 py-4 font-mono font-bold text-slate-200">
+                                  <td className="px-5 py-4 font-mono font-bold text-slate-900 dark:text-slate-200">
                                     {order.orderId}
                                   </td>
-                                  <td className="px-5 py-4 font-semibold text-slate-100">
+                                  <td className="px-5 py-4 font-bold text-slate-850 dark:text-slate-100">
                                     {order.productName}
                                   </td>
-                                  <td className="px-5 py-4 text-slate-300">
+                                  <td className="px-5 py-4 text-slate-600 dark:text-slate-300 font-medium">
                                     {order.retailerName}
                                   </td>
-                                  <td className="px-5 py-4 text-center font-mono text-slate-300">
+                                  <td className="px-5 py-4 text-center font-mono font-semibold text-slate-700 dark:text-slate-300">
                                     {order.quantity}
                                   </td>
                                   <td className="px-5 py-4">
                                     <span
-                                      className={`px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide ${
+                                      className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold tracking-wide uppercase ${
                                         order.priority === "High"
-                                          ? "bg-red-500/10 text-red-400"
+                                          ? "bg-[#EF4444]/10 text-[#EF4444]"
                                           : order.priority === "Medium"
-                                          ? "bg-blue-500/15 text-blue-300"
-                                          : "bg-slate-800 text-slate-400"
+                                          ? "bg-[#3B82F6]/10 text-[#3B82F6]"
+                                          : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400"
                                       }`}
                                     >
                                       {order.priority}
                                     </span>
                                   </td>
-                                  <td className="px-5 py-4 text-slate-400 font-mono text-[10px]">
+                                  <td className="px-5 py-4 text-slate-550 dark:text-slate-400 font-mono text-[10px]">
                                     {new Date(order.timestamp).toLocaleString()}
                                   </td>
                                   <td className="px-5 py-4 text-center">
                                     <span
-                                      className={`px-2 py-1 rounded-full font-bold text-[9px] tracking-wide inline-block ${
+                                      className={`px-2.5 py-0.8 rounded-full font-bold text-[9px] tracking-wider uppercase inline-block ${
                                         isPending
-                                          ? "bg-amber-400 text-slate-950 font-black animate-pulse"
+                                          ? "bg-amber-100 dark:bg-amber-500/15 text-amber-500 animate-pulse border border-amber-500/25"
                                           : isProposed
-                                          ? "bg-orange-500/20 text-orange-400 border border-orange-500/30"
-                                          : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                                          ? "bg-orange-100 dark:bg-orange-500/15 text-orange-400 border border-orange-500/25"
+                                          : "bg-emerald-100 dark:bg-emerald-500/15 text-[#10B981] border border-emerald-500/25"
                                       }`}
                                     >
-                                      {order.status.toUpperCase()}
+                                      {order.status}
                                     </span>
                                   </td>
                                   <td className="px-5 py-4 text-right">
                                     <span
-                                      className={`font-mono text-[11px] font-bold tracking-wide uppercase ${
+                                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold tracking-wide uppercase ${
                                         order.storageLocation === "Cloud"
-                                          ? "text-blue-400"
-                                          : "text-amber-400 italic"
+                                          ? "bg-brand-blue/10 text-brand-blue"
+                                          : "bg-brand-purple/10 text-brand-purple"
                                       }`}
                                     >
-                                      {order.storageLocation}
+                                      {order.storageLocation === "Cloud" ? "Cloud Host" : "ESP32 Buffer"}
                                     </span>
                                   </td>
                                 </tr>
@@ -897,6 +1078,32 @@ export default function App() {
                         </tbody>
                       </table>
                     </div>
+
+                    {/* Pagination Controls */}
+                    {filteredOrders.length > 0 && (
+                      <div className="flex items-center justify-between pt-5 mt-4 border-t border-slate-100 dark:border-slate-800">
+                        <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                          Showing Page <strong className="text-slate-800 dark:text-white font-bold">{currentPage}</strong> of <strong className="text-slate-800 dark:text-white font-bold">{totalPages}</strong> ({filteredOrders.length} entries)
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                            disabled={currentPage === 1}
+                            className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200/50 dark:border-slate-700 disabled:opacity-45 disabled:cursor-not-allowed transition-all cursor-pointer"
+                          >
+                            <ChevronLeft className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                            disabled={currentPage === totalPages}
+                            className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200/50 dark:border-slate-700 disabled:opacity-45 disabled:cursor-not-allowed transition-all cursor-pointer"
+                          >
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                   </div>
                 </motion.div>
               )}
@@ -910,96 +1117,134 @@ export default function App() {
                   exit={{ opacity: 0, y: -15 }}
                   className="space-y-6"
                 >
-                  <div className="bg-slate-900/10 backdrop-blur-md rounded-3xl p-6 border border-slate-800/80">
-                    <div className="pb-4 mb-5 border-b border-slate-850">
-                      <h3 className="text-lg font-bold font-display text-white">
-                        ESP32 Synchronization Engine
+                  <div className="bg-white dark:bg-[#1E293B] border border-slate-200/60 dark:border-slate-800/60 rounded-3xl p-6 shadow-sm">
+                    <div className="pb-4 mb-5 border-b border-slate-100 dark:border-slate-800">
+                      <h3 className="text-lg font-bold font-display text-slate-900 dark:text-white">
+                        Edge Synchronization Manager
                       </h3>
-                      <p className="text-xs text-slate-400 mt-1">
-                        Configure connection failover constraints, buffer uploads, and handshake policies.
+                      <p className="text-xs text-slate-500 dark:text-slate-450 mt-1">
+                        Control failover packet relays, inspect buffer sync speed, and evaluate cloud uploads.
                       </p>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 space-y-4">
-                        <div className="flex items-center justify-between pb-2 border-b border-slate-900">
-                          <span className="text-xs font-bold text-slate-300 uppercase tracking-widest flex items-center gap-2">
-                            <Database className="w-4 h-4 text-blue-400" />
-                            Transmission Pool
+                      
+                      {/* Left: Queue Stat & Actions */}
+                      <div className="bg-slate-50 dark:bg-slate-900 p-6 rounded-2xl border border-slate-200/50 dark:border-slate-800 space-y-5 flex flex-col justify-between shadow-inner">
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest flex items-center gap-2 font-display">
+                            <Database className="w-4 h-4 text-brand-purple" />
+                            Transmission Queue
                           </span>
-                          <span className="text-[10px] bg-slate-900 text-slate-400 px-2 py-0.5 rounded font-mono">
-                            QUEUED STATES
+                          <span className="text-[10px] bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-450 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 font-mono font-bold uppercase">
+                            Buffer Active
                           </span>
                         </div>
 
-                        <div className="text-center py-6">
-                          <span className="text-5xl font-bold text-amber-400 font-display block">
+                        {/* Progress display */}
+                        <div className="text-center py-4 relative flex flex-col items-center justify-center">
+                          <span className="text-6xl font-extrabold text-brand-purple dark:text-brand-violet font-display block">
                             {pendingOrdersCount}
                           </span>
-                          <span className="text-xs text-slate-400 mt-1.5 block font-mono">
-                            Pending Orders inside Local Buffer
+                          <span className="text-xs text-slate-500 dark:text-slate-400 mt-2 block font-medium">
+                            Orders Queued Inside LittleFS Partition
                           </span>
+                          
+                          {/* Sync Progress Bar */}
+                          <div className="w-full max-w-xs mt-6">
+                            <div className="flex justify-between items-center text-[10px] text-slate-500 font-mono mb-1">
+                              <span>Sync Progress</span>
+                              <span>{pendingOrdersCount === 0 ? "100% Complete" : "Sync Awaiting Link"}</span>
+                            </div>
+                            <div className="w-full h-2.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full transition-all duration-550 ${pendingOrdersCount === 0 ? "bg-[#10B981] w-full" : "bg-amber-400 w-1/3 animate-pulse"}`}
+                              />
+                            </div>
+                          </div>
                         </div>
 
-                        <div className="space-y-2.5">
-                          <div className="flex justify-between text-xs text-slate-400">
-                            <span>Auto Sync Protocol Status:</span>
-                            <span className="text-emerald-400 font-bold font-mono">Active (10s Cycle)</span>
+                        <div className="space-y-2.5 pt-3 border-t border-slate-200 dark:border-slate-850 text-xs">
+                          <div className="flex justify-between text-slate-500">
+                            <span>Auto-Sync Status:</span>
+                            <span className="text-[#10B981] font-bold">Enabled (10s Heartbeats)</span>
                           </div>
-                          <div className="flex justify-between text-xs text-slate-400">
-                            <span>Last Synchronization Time:</span>
-                            <span className="text-slate-200 font-mono">
+                          <div className="flex justify-between text-slate-500">
+                            <span>Last Connection Handshake:</span>
+                            <span className="text-slate-850 dark:text-slate-200 font-mono font-semibold">
                               {syncLogs[0] ? new Date(syncLogs[0].timestamp).toLocaleTimeString() : "No history"}
                             </span>
                           </div>
-                          <div className="flex justify-between text-xs text-slate-400">
-                            <span>Next Scheduled Attempt:</span>
-                            <span className="text-slate-400 font-mono">In ~5.5s (Poller active)</span>
+                          <div className="flex justify-between text-slate-500">
+                            <span>Relay Encryption Standard:</span>
+                            <span className="text-slate-550 dark:text-slate-450 font-mono">TLS v1.3 Secure Suite</span>
                           </div>
                         </div>
 
                         <button
                           onClick={triggerSync}
-                          className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-blue-900/30"
+                          className="w-full bg-gradient-to-r from-brand-purple to-brand-blue hover:opacity-95 text-white font-bold py-3 px-4 rounded-xl text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-brand-purple/10"
                         >
                           <RefreshCw className="w-4 h-4" />
-                          Initiate Out-Of-Cycle Synced Upload
+                          <span>Force Out-of-Cycle Cloud Synchronization</span>
                         </button>
                       </div>
 
-                      <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 flex flex-col justify-between">
-                        <div>
-                          <div className="flex items-center justify-between pb-2 border-b border-slate-900 mb-4">
-                            <span className="text-xs font-bold text-slate-300 uppercase tracking-widest">
-                              Protocol Log Information
-                            </span>
-                            <span className="text-[10px] text-amber-500 font-bold uppercase">
-                              Failover Guard
-                            </span>
-                          </div>
-                          
-                          <p className="text-xs text-slate-400 leading-relaxed">
-                            When outages are captured, the edge device's hardware halts immediate TCP uploads and switches storage routing to LittleFS. When internet availability returns, the device utilizes an automated heartbeat protocol to re-establish secure handshakes and clear buffers.
-                          </p>
-
-                          <div className="mt-4 p-3.5 bg-slate-900/50 rounded-xl border border-slate-800/80 text-[11px] space-y-1.5 text-slate-300 font-mono">
-                            <div>✔ 1. State detector poll latency: &lt;100ms</div>
-                            <div>✔ 2. Flash Sector write speed: ~150KB/s</div>
-                            <div>✔ 3. Auto handshake backoff timeout: 5s</div>
-                            <div>✔ 4. Transport Payload Encryption: TLS v1.3</div>
-                          </div>
+                      {/* Right: Sync History Logs */}
+                      <div className="bg-slate-50 dark:bg-slate-900 p-6 rounded-2xl border border-slate-200/50 dark:border-slate-800 flex flex-col h-full shadow-inner">
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800 mb-4 shrink-0">
+                          <h4 className="text-xs font-bold text-slate-750 dark:text-slate-300 uppercase tracking-widest font-display">
+                            Sync Transaction Ledger
+                          </h4>
+                          <span className="text-[10px] text-brand-purple dark:text-brand-violet font-bold font-mono">
+                            LEDGER LOGS
+                          </span>
                         </div>
 
-                        <div className="pt-4 text-xs text-slate-400 italic">
-                          "Durable local storage combined with automated cloud uploading enables resilient offline systems."
+                        <div className="flex-1 overflow-y-auto space-y-3 pr-1 custom-scrollbar max-h-[300px]">
+                          {syncLogs.length === 0 ? (
+                            <p className="text-xs text-slate-400 dark:text-slate-500 text-center py-20 italic">
+                              No historic sync audits registered yet.
+                            </p>
+                          ) : (
+                            syncLogs.map((log) => (
+                              <div
+                                key={log.id}
+                                className="bg-white dark:bg-slate-950 p-4 rounded-xl border border-slate-200/40 dark:border-slate-900 flex items-center justify-between shadow-sm"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 bg-emerald-500/10 border border-emerald-500/20 rounded-lg flex items-center justify-center text-[#10B981]">
+                                    <ShieldCheck className="w-4.5 h-4.5" />
+                                  </div>
+                                  <div>
+                                    <span className="font-mono text-xs font-bold text-slate-850 dark:text-slate-200 block">
+                                      Batch {log.id}
+                                    </span>
+                                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                      {log.result}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <span className="bg-emerald-100 dark:bg-emerald-500/15 text-[#10B981] text-[9px] font-bold px-2 py-0.5 rounded-full font-mono border border-emerald-500/20">
+                                    +{log.ordersSynced} SYNCED
+                                  </span>
+                                  <p className="text-[9px] text-slate-400 dark:text-slate-500 font-mono mt-1">
+                                    {new Date(log.timestamp).toLocaleTimeString()}
+                                  </p>
+                                </div>
+                              </div>
+                            ))
+                          )}
                         </div>
                       </div>
+
                     </div>
                   </div>
                 </motion.div>
               )}
 
-              {/* TAB 4: ESP32 DEVICE MONITORING */}
+              {/* TAB 4: ESP32 DEVICE MONITOR */}
               {activeTab === "monitoring" && (
                 <motion.div
                   key="tab-monitoring"
@@ -1008,205 +1253,113 @@ export default function App() {
                   exit={{ opacity: 0, y: -15 }}
                   className="space-y-6"
                 >
-                  <div className="bg-slate-900/10 backdrop-blur-md rounded-3xl p-6 border border-slate-800/80">
-                    <div className="pb-4 mb-5 border-b border-slate-850 flex items-center justify-between">
+                  <div className="bg-white dark:bg-[#1E293B] border border-slate-200/60 dark:border-slate-800/60 rounded-3xl p-6 shadow-sm">
+                    <div className="pb-4 mb-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
                       <div>
-                        <h3 className="text-lg font-bold font-display text-white">
-                          Hardware Edge Node Diagnostics
+                        <h3 className="text-lg font-bold font-display text-slate-900 dark:text-white">
+                          Hardware Edge Diagnostics
                         </h3>
-                        <p className="text-xs text-slate-400 mt-1">
-                          Receive real-time telemetry metrics directly from the SoC registers.
+                        <p className="text-xs text-slate-500 dark:text-slate-450 mt-1">
+                          Live hardware registers and system telemetry fetched directly from the SoC.
                         </p>
                       </div>
-                      <span className="bg-blue-600 text-white font-mono font-bold text-[10px] px-2 py-0.5 rounded shadow">
+                      <span className="bg-brand-purple/10 text-brand-purple font-mono font-bold text-[10px] px-3 py-1 rounded-lg border border-brand-purple/20">
                         COMM PORT: COM 4
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                       
-                      {/* Telemetry card 1 */}
-                      <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
+                      {/* Stat Card 1 */}
+                      <div className="bg-slate-50 dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/50 dark:border-slate-800 space-y-4 shadow-inner">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs text-slate-400">MCU Uptime</span>
-                          <Clock className="w-4 h-4 text-slate-500" />
+                          <span className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider">Device Health</span>
+                          <span className={`w-2.5 h-2.5 rounded-full ${isInternetAvailable ? "bg-[#10B981]" : "bg-[#EF4444] animate-pulse"}`} />
                         </div>
-                        <p className="text-2xl font-mono text-white font-bold">
+                        <p className="text-2xl font-bold font-display text-slate-850 dark:text-slate-100">
+                          {isInternetAvailable ? "🟢 ONLINE" : "🔴 OFFLINE"}
+                        </p>
+                        <div className="pt-2 border-t border-slate-200 dark:border-slate-850 text-slate-450 dark:text-slate-500 text-[10px] font-mono">
+                          Last Handshake: Just now
+                        </div>
+                      </div>
+
+                      {/* Stat Card 2 */}
+                      <div className="bg-slate-50 dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/50 dark:border-slate-800 space-y-4 shadow-inner">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider">Signal Strength (RSSI)</span>
+                          <Wifi className="w-4 h-4 text-brand-blue" />
+                        </div>
+                        <p className="text-2xl font-mono font-bold text-slate-850 dark:text-slate-100">
+                          {isInternetAvailable ? "-64 dBm" : "Disconnected"}
+                        </p>
+                        <div className="pt-2 border-t border-slate-200 dark:border-slate-850 text-slate-450 dark:text-slate-500 text-[10px] font-mono flex items-center justify-between">
+                          <span>Quality: {isInternetAvailable ? "Excellent (92%)" : "0%"}</span>
+                        </div>
+                      </div>
+
+                      {/* Stat Card 3 */}
+                      <div className="bg-slate-50 dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/50 dark:border-slate-800 space-y-4 shadow-inner">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider">Local Buffer Count</span>
+                          <HardDrive className="w-4 h-4 text-brand-purple" />
+                        </div>
+                        <p className="text-2xl font-mono font-bold text-amber-500">
+                          {pendingOrdersCount} orders
+                        </p>
+                        <div className="pt-2 border-t border-slate-200 dark:border-slate-850 text-slate-450 dark:text-slate-500 text-[10px] font-mono">
+                          LittleFS Active sector limit: 120
+                        </div>
+                      </div>
+
+                      {/* Stat Card 4 */}
+                      <div className="bg-slate-50 dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/50 dark:border-slate-800 space-y-4 shadow-inner">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider">CPU Register Load</span>
+                          <Cpu className="w-4 h-4 text-brand-purple" />
+                        </div>
+                        <p className="text-2xl font-mono font-bold text-slate-850 dark:text-slate-100">
+                          {deviceStatus ? `${deviceStatus.cpuUsage}%` : "14%"}
+                        </p>
+                        <div className="pt-2 border-t border-slate-200 dark:border-slate-850 text-slate-450 dark:text-slate-500 text-[10px] font-mono">
+                          SoC Frequency: 240 MHz Dual-Core
+                        </div>
+                      </div>
+
+                      {/* Stat Card 5 */}
+                      <div className="bg-slate-50 dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/50 dark:border-slate-800 space-y-4 shadow-inner">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider">Uptime</span>
+                          <Clock className="w-4 h-4 text-brand-blue" />
+                        </div>
+                        <p className="text-2xl font-mono font-bold text-slate-850 dark:text-slate-100">
                           {deviceStatus ? `${deviceStatus.uptime}s` : "4850s"}
                         </p>
-                        <div className="pt-2 border-t border-slate-900 text-slate-400 text-[10px] font-mono">
-                          Auto Heartbeat Interval: Every 10s
+                        <div className="pt-2 border-t border-slate-200 dark:border-slate-850 text-slate-450 dark:text-slate-500 text-[10px] font-mono">
+                          Stable loop cycle rate: ~10ms
                         </div>
                       </div>
 
-                      {/* Telemetry card 2 */}
-                      <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
+                      {/* Stat Card 6 */}
+                      <div className="bg-slate-50 dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/50 dark:border-slate-800 space-y-4 shadow-inner">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs text-slate-400">Memory Allocation</span>
-                          <CheckCircle className="w-4 h-4 text-emerald-400" />
+                          <span className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider">Last Sync Event</span>
+                          <History className="w-4 h-4 text-brand-purple" />
                         </div>
-                        <p className="text-2xl font-mono text-white font-bold">
-                          {deviceStatus ? `${deviceStatus.memoryUsage}%` : "38%"}
+                        <p className="text-2xl font-bold font-display text-slate-850 dark:text-slate-100">
+                          {syncLogs[0] ? `+${syncLogs[0].ordersSynced} orders` : "No sync yet"}
                         </p>
-                        <div className="pt-2 border-t border-slate-900 text-[10px] text-amber-400 font-mono flex justify-between">
-                          <span>Partition Type: LittleFS</span>
-                          <span>Heap: 184KB Free</span>
+                        <div className="pt-2 border-t border-slate-200 dark:border-slate-850 text-slate-450 dark:text-slate-500 text-[10px] font-mono">
+                          {syncLogs[0] ? new Date(syncLogs[0].timestamp).toLocaleTimeString() : "Pending log trigger"}
                         </div>
                       </div>
 
-                      {/* Telemetry card 3 */}
-                      <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-4">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-slate-400">Firmware Build Target</span>
-                          <Cpu className="w-4 h-4 text-blue-400" />
-                        </div>
-                        <p className="text-2xl font-display text-white font-medium">
-                          ESP32 v1.2.0-STABLE
-                        </p>
-                        <div className="pt-2 border-t border-slate-900 text-[10px] text-slate-500 font-mono">
-                          Compiler: ESP-IDF v5.1 with LittleFS API
-                        </div>
-                      </div>
-
-                    </div>
-
-                    <div className="mt-6 bg-slate-950 p-6 rounded-2xl border border-slate-800 space-y-5">
-                      <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest">
-                        State Machine Status Trace
-                      </h4>
-
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs font-mono">
-                        <div className="bg-slate-900 p-3 rounded-xl border border-slate-850">
-                          <span className="text-slate-400 block mb-1">RSSI Core:</span>
-                          <span className="font-bold text-white">
-                            {isInternetAvailable ? "-64 dBm (Excellent)" : "-110 dBm (Outage Cut)"}
-                          </span>
-                        </div>
-                        <div className="bg-slate-900 p-3 rounded-xl border border-slate-850">
-                          <span className="text-slate-400 block mb-1">Device Status State:</span>
-                          <span className="font-bold text-emerald-400">{deviceStatus?.status || "ONLINE"}</span>
-                        </div>
-                        <div className="bg-slate-900 p-3 rounded-xl border border-slate-850">
-                          <span className="text-slate-400 block mb-1">Buffered Flash Count:</span>
-                          <span className="font-bold text-amber-300">{pendingOrdersCount} files</span>
-                        </div>
-                        <div className="bg-slate-900 p-3 rounded-xl border border-slate-850">
-                          <span className="text-slate-400 block mb-1">Failed Handshakes:</span>
-                          <span className="font-bold text-red-400">{deviceStatus?.failedSyncAttempts || 0}</span>
-                        </div>
-                      </div>
                     </div>
                   </div>
                 </motion.div>
               )}
 
-              {/* TAB 5: IOT CONTROL CENTER */}
-              {activeTab === "control" && (
-                <motion.div
-                  key="tab-control"
-                  initial={{ opacity: 0, y: 15 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -15 }}
-                  className="space-y-6"
-                >
-                  <div className="bg-slate-900/10 backdrop-blur-md rounded-3xl p-6 border border-slate-800/80">
-                    <div className="pb-4 mb-5 border-b border-slate-850">
-                      <h3 className="text-lg font-bold font-display text-white">
-                        IoT Edge Sandbox & Simulation Controls
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-1">
-                        Utilize these controls to inspect failover edge behavior during hardware engineering evaluation.
-                      </p>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      
-                      {/* Demonstration Injector panel */}
-                      <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 flex flex-col justify-between">
-                        <div>
-                          <span className="text-xs font-bold text-slate-300 uppercase tracking-widest block mb-1.5">
-                            Telecom Outage Simulation
-                          </span>
-                          <p className="text-xs text-slate-400 leading-relaxed mb-4">
-                            Simulate cutting or re-establishing physical fiber / cellular towers in rural regions to inspect backup queue storage transitions in real time.
-                          </p>
-                        </div>
-
-                        <div className="space-y-2">
-                          <button
-                            onClick={() => toggleNetworkState(false)}
-                            className="w-full bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white font-bold py-2 px-3 rounded-xl text-xs transition-all border border-red-500/20 cursor-pointer"
-                          >
-                            Simulate Internet Outage
-                          </button>
-                          <button
-                            onClick={() => toggleNetworkState(true)}
-                            className="w-full bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600 hover:text-white font-bold py-2 px-3 rounded-xl text-xs transition-all border border-emerald-500/20 cursor-pointer"
-                          >
-                            Restore Internet Link
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* GPIO 12 Button creation */}
-                      <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 flex flex-col justify-between">
-                        <div>
-                          <span className="text-xs font-bold text-slate-300 uppercase tracking-widest block mb-1.5">
-                            Tactile GPIO Order Clicker
-                          </span>
-                          <p className="text-xs text-slate-400 leading-relaxed mb-4">
-                            Creates a demo order mimicking a merchant pressing a physical push-button hooked directly into the ESP32’s GPIO pin 12.
-                          </p>
-                        </div>
-
-                        <button
-                          onClick={handleHardwareGPIONode}
-                          className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-bold py-3 px-3 rounded-xl text-xs border border-slate-700 transition-all flex items-center justify-center gap-2 cursor-pointer"
-                        >
-                          <PlusCircle className="w-4 h-4 text-amber-400" />
-                          Simulate Hard Press GPIO 12
-                        </button>
-                      </div>
-
-                      {/* Reset Chip trigger */}
-                      <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 flex flex-col justify-between">
-                        <div>
-                          <span className="text-xs font-bold text-slate-300 uppercase tracking-widest block mb-1.5">
-                            System Safe Restart EN Button
-                          </span>
-                          <p className="text-xs text-slate-400 leading-relaxed mb-4">
-                            Triggers a chip powercycle event. Clearing active processing states, re-initializing registers, and checking LittleFS directory mappings.
-                          </p>
-                        </div>
-
-                        <button
-                          onClick={restartDevice}
-                          className="w-full bg-slate-900 hover:bg-red-900/20 text-red-400 font-bold py-3 px-3 rounded-xl text-xs border border-slate-800 hover:border-red-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
-                        >
-                          <RotateCcw className="w-4 h-4 text-red-500" />
-                          Simulate Hardware Safe Restart
-                        </button>
-                      </div>
-
-                    </div>
-
-                    {/* Integrated step indicator guide */}
-                    <div className="mt-8 bg-slate-950/40 p-5 rounded-2xl border border-slate-800">
-                      <span className="text-xs font-bold text-slate-300 uppercase block mb-3">
-                        Competition Judge Instructions
-                      </span>
-                      <ol className="text-xs text-slate-400 space-y-2 list-decimal list-inside leading-relaxed">
-                        <li>Toggle <span className="text-white font-semibold">Simulate Internet Outage</span>. Dashboard alert state immediately updates to represent telecommunications cutoff.</li>
-                        <li>Create a few orders via the merchant terminal input or pressing <span className="text-white font-semibold">GPIO 12 Tactile Click</span>.</li>
-                        <li>Explore the <span className="text-amber-400 font-semibold font-mono">/littlefs/orders.txt</span> file viewer on the ESP32 overlay board to confirm partition storage.</li>
-                        <li>Restore connectivity. Automatic handshake protocol begins upload immediately without requiring manual sync triggers!</li>
-                      </ol>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-
-              {/* TAB 6: ANALYTICS SUITE */}
+              {/* TAB 5: PERFORMANCE ANALYTICS */}
               {activeTab === "analytics" && (
                 <motion.div
                   key="tab-analytics"
@@ -1215,99 +1368,198 @@ export default function App() {
                   exit={{ opacity: 0, y: -15 }}
                   className="space-y-6"
                 >
-                  <div className="bg-slate-900/10 backdrop-blur-md rounded-3xl p-6 border border-slate-800/80">
-                    <div className="pb-4 mb-5 border-b border-slate-850">
-                      <h3 className="text-lg font-bold font-display text-white">
-                        Performance Analytics Dashboard
+                  <div className="bg-white dark:bg-[#1E293B] border border-slate-200/60 dark:border-slate-800/60 rounded-3xl p-6 shadow-sm">
+                    <div className="pb-4 mb-5 border-b border-slate-100 dark:border-slate-800">
+                      <h3 className="text-lg font-bold font-display text-slate-900 dark:text-white">
+                        Performance Analytics Suite
                       </h3>
-                      <p className="text-xs text-slate-400 mt-1">
-                        High-precision custom SVG charts analyzing packet delivery rates, queue trends, and network reliability stats.
+                      <p className="text-xs text-slate-500 dark:text-slate-450 mt-1">
+                        High-precision visual charts displaying transaction flows, database conversions, and telecom downtime ratios.
                       </p>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       
-                      {/* Chart 1: Order Buffer Intake */}
-                      <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800">
+                      {/* Chart 1: Order Intake Trends */}
+                      <div className="bg-slate-50 dark:bg-slate-900 p-6 rounded-2xl border border-slate-200/50 dark:border-slate-800 shadow-inner">
                         <div className="flex items-center justify-between mb-4">
                           <div>
-                            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
-                              Order Synced Trends (Daily)
+                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider block font-display">
+                              Orders Created vs Synced Trends
                             </span>
-                            <span className="text-[10px] text-slate-500 font-mono">Accumulated Sales Volumes</span>
+                            <span className="text-[10px] text-slate-450 dark:text-slate-500 font-mono">Daily volume metrics</span>
                           </div>
-                          <span className="text-emerald-400 text-xs font-bold font-mono">+12.5%</span>
+                          <span className="text-[#10B981] text-xs font-bold font-mono">+12.5%</span>
                         </div>
 
-                        {/* Interactive SVG bar chart */}
-                        <div className="h-44 w-full flex items-end justify-between pt-4 pb-2 border-b border-slate-800 px-2">
+                        {/* SVG Area Chart */}
+                        <div className="h-48 w-full relative pt-2">
+                          <svg className="w-full h-36" viewBox="0 0 100 30" preserveAspectRatio="none">
+                            <defs>
+                              <linearGradient id="purpleGradient" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#6C3BFF" stopOpacity="0.25"/>
+                                <stop offset="100%" stopColor="#6C3BFF" stopOpacity="0.0"/>
+                              </linearGradient>
+                            </defs>
+                            {/* Gridlines */}
+                            <line x1="0" y1="10" x2="100" y2="10" stroke="rgba(148, 163, 184, 0.08)" strokeWidth="0.5" />
+                            <line x1="0" y1="20" x2="100" y2="20" stroke="rgba(148, 163, 184, 0.08)" strokeWidth="0.5" />
+                            {/* Chart Area */}
+                            <path
+                              d="M 0 25 Q 15 15, 30 18 T 60 8 T 90 2 L 100 2 L 100 30 L 0 30 Z"
+                              fill="url(#purpleGradient)"
+                            />
+                            {/* Chart Line */}
+                            <path
+                              d="M 0 25 Q 15 15, 30 18 T 60 8 T 90 2 L 100 2"
+                              fill="none"
+                              stroke="#7F5AF0"
+                              strokeWidth="1.5"
+                            />
+                            {/* Data points */}
+                            <circle cx="30" cy="18" r="1.5" fill="#5B7CFA" />
+                            <circle cx="60" cy="8" r="1.5" fill="#7F5AF0" />
+                            <circle cx="90" cy="2" r="1.5" fill="#6C3BFF" />
+                          </svg>
+                          <div className="absolute inset-0 flex flex-col justify-between text-[9px] text-slate-400 dark:text-slate-500 font-mono pointer-events-none">
+                            <span>120 Orders</span>
+                            <span>60 Orders</span>
+                            <span>0 Orders</span>
+                          </div>
+                          <div className="flex justify-between items-center text-[10px] text-slate-500 font-mono mt-2 pt-2 border-t border-slate-200 dark:border-slate-850">
+                            <span>Mon</span>
+                            <span>Wed</span>
+                            <span>Fri</span>
+                            <span>Today</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Chart 2: Orders Buffered During Outages */}
+                      <div className="bg-slate-50 dark:bg-slate-900 p-6 rounded-2xl border border-slate-200/50 dark:border-slate-800 shadow-inner">
+                        <div className="flex items-center justify-between mb-4">
+                          <div>
+                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider block font-display">
+                              Orders Buffered During Outages
+                            </span>
+                            <span className="text-[10px] text-slate-450 dark:text-slate-500 font-mono">Data loss prevention audits</span>
+                          </div>
+                          <span className="text-brand-purple text-xs font-bold font-mono">100% Retained</span>
+                        </div>
+
+                        {/* SVG Bar Chart */}
+                        <div className="h-48 w-full flex items-end justify-between px-2 pt-4">
                           {[
-                            { label: "Mon", val: 40 },
-                            { label: "Tue", val: 55 },
-                            { label: "Wed", val: 32 },
-                            { label: "Thu", val: 84 },
-                            { label: "Fri", val: 68 },
-                            { label: "Sat", val: 95 },
-                            { label: "Sun", val: 120 }
-                          ].map((bar) => (
-                            <div key={bar.label} className="flex flex-col items-center gap-2 flex-1 group">
-                              <div className="w-8 bg-blue-600/20 hover:bg-blue-600 rounded-t-md transition-all duration-300 relative" style={{ height: `${(bar.val / 120) * 110}px` }}>
-                                <div className="absolute top-[-24px] left-1/2 -translate-x-1/2 bg-slate-800 text-white font-mono text-[9px] py-0.5 px-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
-                                  {bar.val} items
-                                </div>
+                            { label: "Outage A", val: 4, color: "from-brand-purple to-brand-blue" },
+                            { label: "Outage B", val: 8, color: "from-brand-violet to-brand-purple" },
+                            { label: "Outage C", val: 2, color: "from-brand-blue to-brand-violet" },
+                            { label: "Outage D", val: 12, color: "from-[#6C3BFF] to-[#5B7CFA]" },
+                            { label: "Current", val: pendingOrdersCount, color: "from-amber-400 to-[#F59E0B]" }
+                          ].map((bar, idx) => (
+                            <div key={idx} className="flex flex-col items-center gap-2 flex-1 group">
+                              <div className="text-[10px] font-mono font-bold text-slate-600 dark:text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                                {bar.val}
                               </div>
-                              <span className="text-[10px] text-slate-500 font-mono">{bar.label}</span>
+                              <div className="w-8 bg-slate-200 dark:bg-slate-800 rounded-t-lg overflow-hidden h-28 flex items-end">
+                                <div
+                                  className={`w-full bg-gradient-to-t ${bar.color} rounded-t-lg transition-all duration-500`}
+                                  style={{ height: `${(bar.val / 12) * 100}%` }}
+                                />
+                              </div>
+                              <span className="text-[10px] text-slate-500 font-mono truncate max-w-[64px]">{bar.label}</span>
                             </div>
                           ))}
                         </div>
                       </div>
 
-                      {/* Chart 2: Outage & Connectivity failures */}
-                      <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800">
-                        <div className="flex items-center justify-between mb-4">
-                          <div>
-                            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
-                              Outage & Sync Success Rate
-                            </span>
-                            <span className="text-[10px] text-slate-500 font-mono">Last 7 Calendar Days</span>
-                          </div>
-                          <span className="text-blue-400 text-xs font-bold font-mono">98.4%</span>
-                        </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
 
-                        {/* Line dynamic graph SVG representation */}
-                        <div className="h-44 w-full relative pt-4 flex items-end">
-                          <svg className="w-full h-32 text-blue-500" viewBox="0 0 100 30" preserveAspectRatio="none">
-                            <defs>
-                              <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.3"/>
-                                <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.0"/>
-                              </linearGradient>
-                            </defs>
-                            <path
-                              d="M 0 25 Q 15 20, 30 22 T 60 10 T 90 2 T 100 5 L 100 30 L 0 30 Z"
-                              fill="url(#chartGradient)"
-                            />
-                            <path
-                              d="M 0 25 Q 15 20, 30 22 T 60 10 T 90 2 T 100 5"
-                              fill="none"
-                              stroke="#3b82f6"
-                              strokeWidth="1.2"
-                            />
-                          </svg>
-                          <div className="absolute inset-0 flex flex-col justify-between text-[9px] text-slate-600 font-mono pointer-events-none">
-                            <div>99.9% Reliable</div>
-                            <div className="border-t border-slate-900 border-dashed w-full" />
-                            <div>90.0% Guard Limit</div>
-                            <div className="border-t border-slate-900 border-dashed w-full" />
-                            <div>80.0% Critical</div>
-                          </div>
+              {/* TAB 6: DEMO SIMULATION */}
+              {activeTab === "control" && (
+                <motion.div
+                  key="tab-control"
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -15 }}
+                  className="space-y-6"
+                >
+                  <div className="bg-white dark:bg-[#1E293B] border border-slate-200/60 dark:border-slate-800/60 rounded-3xl p-6 shadow-sm">
+                    <div className="pb-4 mb-5 border-b border-slate-100 dark:border-slate-800">
+                      <h3 className="text-lg font-bold font-display text-slate-900 dark:text-white">
+                        IoT Simulation Sandbox
+                      </h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-450 mt-1">
+                        Use this sandbox to inject hardware failures and evaluate system failover integrity.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      
+                      {/* Sim card 1 */}
+                      <div className="bg-slate-50 dark:bg-slate-900 p-6 rounded-2xl border border-slate-200/50 dark:border-slate-800 flex flex-col justify-between shadow-inner">
+                        <div>
+                          <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-widest block mb-2 font-display">
+                            Telecom Outage simulation
+                          </span>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-6">
+                            Simulate cutting or re-establishing physical fiber / cellular links in rural segments to watch the ESP32 switch storage modes.
+                          </p>
                         </div>
-                        <div className="flex justify-between items-center text-[10px] text-slate-500 font-mono mt-3.5 pt-2 border-t border-slate-900">
-                          <span>06/08</span>
-                          <span>06/10</span>
-                          <span>06/12</span>
-                          <span>Today (June 14)</span>
+                        <div className="space-y-2.5">
+                          <button
+                            onClick={() => toggleNetworkState(false)}
+                            className="w-full bg-[#EF4444]/10 hover:bg-[#EF4444] text-[#EF4444] hover:text-white font-bold py-2.5 px-3 rounded-xl text-xs border border-[#EF4444]/25 transition-all cursor-pointer text-center"
+                          >
+                            Simulate Telecom Outage (Kill Link)
+                          </button>
+                          <button
+                            onClick={() => toggleNetworkState(true)}
+                            className="w-full bg-[#10B981]/10 hover:bg-[#10B981] text-[#10B981] hover:text-white font-bold py-2.5 px-3 rounded-xl text-xs border border-[#10B981]/25 transition-all cursor-pointer text-center"
+                          >
+                            Restore Telecom Link
+                          </button>
                         </div>
+                      </div>
+
+                      {/* Sim card 2 */}
+                      <div className="bg-slate-50 dark:bg-slate-900 p-6 rounded-2xl border border-slate-200/50 dark:border-slate-800 flex flex-col justify-between shadow-inner">
+                        <div>
+                          <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-widest block mb-2 font-display">
+                            GPIO Tactile Button simulator
+                          </span>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-6">
+                            Applies simulated electrical impulses mimicking a merchant pressing a physical push-button hooked directly into GPIO 12 on the ESP32.
+                          </p>
+                        </div>
+                        <button
+                          onClick={handleHardwareGPIONode}
+                          className="w-full bg-brand-purple hover:bg-brand-purple/95 text-white font-bold py-3 px-3 rounded-xl text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-brand-purple/10"
+                        >
+                          <PlusCircle className="w-4 h-4 text-amber-300" />
+                          <span>Trigger Hardware GPIO 12 Button</span>
+                        </button>
+                      </div>
+
+                      {/* Sim card 3 */}
+                      <div className="bg-slate-50 dark:bg-slate-900 p-6 rounded-2xl border border-slate-200/50 dark:border-slate-800 flex flex-col justify-between shadow-inner">
+                        <div>
+                          <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-widest block mb-2 font-display">
+                            Power Cycle Restart (EN)
+                          </span>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-6">
+                            Instruct the ESP32 core processor to execute a powercycle restart, refreshing the system loops and verifying filesystem mount tables.
+                          </p>
+                        </div>
+                        <button
+                          onClick={restartDevice}
+                          className="w-full bg-slate-200 dark:bg-slate-800 hover:bg-[#EF4444]/10 hover:text-[#EF4444] text-slate-700 dark:text-slate-300 font-bold py-3 px-3 rounded-xl text-xs border border-slate-300 dark:border-slate-700 hover:border-[#EF4444]/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                        >
+                          <RotateCcw className="w-4 h-4 text-[#EF4444]" />
+                          <span>Cycle Chip Reset EN Button</span>
+                        </button>
                       </div>
 
                     </div>
@@ -1315,67 +1567,7 @@ export default function App() {
                 </motion.div>
               )}
 
-              {/* TAB 7: SYNC HISTORY LOGS */}
-              {activeTab === "history" && (
-                <motion.div
-                  key="tab-history"
-                  initial={{ opacity: 0, y: 15 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -15 }}
-                  className="space-y-6"
-                >
-                  <div className="bg-slate-900/10 backdrop-blur-md rounded-3xl p-6 border border-slate-800/80">
-                    <div className="pb-4 mb-5 border-b border-slate-850">
-                      <h3 className="text-lg font-bold font-display text-white">
-                        Synchronisation Ledger Mappings
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-1">
-                        Cryptographic ledger of synchronization transactions converted from edge gateways since initial boot.
-                      </p>
-                    </div>
-
-                    <div className="space-y-3.5">
-                      {syncLogs.length === 0 ? (
-                        <p className="text-xs text-slate-500 text-center py-10 italic">
-                          No historic sync files registered. Run a synchronization session to generate logs.
-                        </p>
-                      ) : (
-                        syncLogs.map((log) => (
-                          <div
-                            key={log.id}
-                            className="bg-slate-950 p-4 rounded-xl border border-slate-850 flex items-center justify-between"
-                          >
-                            <div className="flex items-center gap-3.5">
-                              <div className="w-9 h-9 bg-emerald-500/10 border border-emerald-500/20 rounded-lg flex items-center justify-center text-emerald-400 shrink-0">
-                                <ShieldCheck className="w-4 h-4" />
-                              </div>
-                              <div>
-                                <span className="font-mono text-xs font-bold text-slate-200">
-                                  ID Tag: {log.id}
-                                </span>
-                                <p className="text-xs text-slate-400 mt-1">
-                                  {log.result}
-                                </p>
-                              </div>
-                            </div>
-
-                            <div className="text-right">
-                              <span className="bg-emerald-500 text-slate-950 text-[10px] font-bold px-2 py-0.5 rounded-full font-mono">
-                                +{log.ordersSynced} SYNCED
-                              </span>
-                              <p className="text-[10px] text-slate-500 font-mono mt-1.5">
-                                {new Date(log.timestamp).toLocaleString()}
-                              </p>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-
-              {/* TAB 8: SYSTEM SETTINGS */}
+              {/* TAB 7: SYSTEM SETTINGS */}
               {activeTab === "settings" && (
                 <motion.div
                   key="tab-settings"
@@ -1384,25 +1576,25 @@ export default function App() {
                   exit={{ opacity: 0, y: -15 }}
                   className="space-y-6"
                 >
-                  <div className="bg-slate-900/10 backdrop-blur-md rounded-3xl p-6 border border-slate-800/80">
-                    <div className="pb-4 mb-5 border-b border-slate-850 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="bg-white dark:bg-[#1E293B] border border-slate-200/60 dark:border-slate-800/60 rounded-3xl p-6 shadow-sm">
+                    <div className="pb-4 mb-5 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div>
-                        <h3 className="text-lg font-bold font-display text-white">
+                        <h3 className="text-lg font-bold font-display text-slate-900 dark:text-white">
                           System Configuration Panel
                         </h3>
-                        <p className="text-xs text-slate-400 mt-1">
-                          Control hardware parameters, simulation states, or export production ESP32 firmware.
+                        <p className="text-xs text-slate-500 dark:text-slate-450 mt-1">
+                          Configure polling limits, examine LittleFS mapping specs, or fetch C++ sketch firmware.
                         </p>
                       </div>
 
-                      {/* Sub-tab controllers */}
-                      <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-850 self-start shrink-0">
+                      {/* Sub-tab selection */}
+                      <div className="flex bg-slate-100 dark:bg-slate-900 p-1.5 rounded-xl border border-slate-200/50 dark:border-slate-800 self-start shrink-0">
                         <button
                           onClick={() => setSettingsSubTab("general")}
                           className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all cursor-pointer ${
                             settingsSubTab === "general"
-                              ? "bg-blue-600 text-white shadow"
-                              : "text-slate-400 hover:text-white"
+                              ? "bg-brand-purple text-white shadow-sm"
+                              : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
                           }`}
                         >
                           General Configuration
@@ -1411,11 +1603,11 @@ export default function App() {
                           onClick={() => setSettingsSubTab("esp32")}
                           className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all cursor-pointer ${
                             settingsSubTab === "esp32"
-                              ? "bg-blue-600 text-white shadow"
-                              : "text-slate-400 hover:text-white"
+                              ? "bg-brand-purple text-white shadow-sm"
+                              : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
                           }`}
                         >
-                          ESP32 C++ Code
+                          ESP32 C++ Sketch
                         </button>
                       </div>
                     </div>
@@ -1425,76 +1617,74 @@ export default function App() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           
                           {/* Option 1 */}
-                          <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-3">
-                            <label className="text-xs font-bold text-slate-300 block">
-                              Heartbeat Polling Interval (Milli-seconds)
+                          <div className="bg-slate-50 dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/50 dark:border-slate-800 space-y-3 shadow-inner">
+                            <label className="text-xs font-bold text-slate-750 dark:text-slate-250 block">
+                              Heartbeat Polling Interval (ms)
                             </label>
                             <input
                               type="number"
                               defaultValue="10000"
-                              className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-white focus:outline-none"
+                              className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-2.5 text-xs text-slate-900 dark:text-white focus:outline-none"
                             />
-                            <p className="text-[10px] text-slate-500 leading-normal">
-                              Frequencies of the POST heartbeats sent to the server. Lower values represent real-time updates but increment CPU workloads on low RAM nodes.
+                            <p className="text-[10px] text-slate-450 dark:text-slate-500 leading-normal">
+                              Determines how often the client queries the hardware state. Lower intervals increase edge telemetry resolution but double processor overhead.
                             </p>
                           </div>
 
                           {/* Option 2 */}
-                          <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-3">
-                            <label className="text-xs font-bold text-slate-300 block">
-                              Backup storage Flash Partition Type
+                          <div className="bg-slate-50 dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/50 dark:border-slate-800 space-y-3 shadow-inner">
+                            <label className="text-xs font-bold text-slate-750 dark:text-slate-250 block">
+                              Failover Flash Partition Format
                             </label>
-                            <select className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-white cursor-pointer focus:outline-none">
-                              <option>LittleFS Flash Sector Mapping (Preferred)</option>
-                              <option>FatFS SD Card Array Partition</option>
-                              <option>EEPROM Direct Byte Map (No partition)</option>
+                            <select className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-2.5 text-xs text-slate-700 dark:text-slate-350 cursor-pointer focus:outline-none">
+                              <option>LittleFS Flash Sector Cluster Map (Default)</option>
+                              <option>FAT32 SD Card Array Partition</option>
+                              <option>EEPROM Raw Direct Byte Stack</option>
                             </select>
-                            <p className="text-[10px] text-slate-500 leading-normal">
-                              Choose between partition schemas for storing failover text objects. LittleFS ensures wear-leveling algorithms on modern ESP32 flash matrices.
+                            <p className="text-[10px] text-slate-450 dark:text-slate-500 leading-normal">
+                              Instructs the compiler partition tables how to store cached transactions. LittleFS offers dynamic wear-leveling to protect memory life.
                             </p>
                           </div>
 
                         </div>
 
-                        <div className="bg-slate-950 p-6 rounded-2xl border border-slate-850 space-y-4">
-                          <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                            Critical Engineering Maintenance Controls
+                        <div className="bg-red-500/[0.02] p-6 rounded-2xl border border-red-500/20 space-y-4">
+                          <h4 className="text-xs font-bold text-[#EF4444] uppercase tracking-wider">
+                            Danger Maintenance Utilities
                           </h4>
                           <div className="flex gap-4">
                             <button
                               onClick={resetDemo}
-                              className="bg-red-950 hover:bg-red-900/40 text-red-400 border border-red-500/25 font-bold px-4 py-2 rounded-xl text-xs transition-all cursor-pointer"
+                              className="bg-[#EF4444]/15 hover:bg-[#EF4444] text-[#EF4444] hover:text-white border border-[#EF4444]/25 font-bold px-4 py-2.5 rounded-xl text-xs transition-all cursor-pointer"
                             >
-                              Erase Flash / Zero Out Database Mocks
+                              Erase Flash Buffers / Factory Reset DB
                             </button>
                           </div>
-                          <p className="text-[11px] text-slate-500">
-                            WARNING: Erases all order tables and resets mock device trace state back to manufacturing initial parameters.
+                          <p className="text-[10px] text-slate-550 dark:text-slate-500">
+                            WARNING: Zeroes all transaction ledger logs, deletes proposed items, and rolls the edge status telemetry back to manufacturing configurations.
                           </p>
                         </div>
-
                       </div>
                     ) : (
                       <div className="space-y-6">
-                        <div className="bg-blue-950/20 border border-blue-500/20 p-5 rounded-2xl text-blue-300 space-y-2">
+                        <div className="bg-brand-purple/5 dark:bg-brand-purple/10 border border-brand-purple/20 p-5 rounded-2xl text-brand-purple dark:text-brand-violet space-y-2">
                           <div className="flex items-center gap-2">
-                            <span className="font-mono text-[10px] px-2 py-0.5 bg-blue-900/40 border border-blue-500/30 rounded-full font-bold">
-                              RECOMMENDED DEMO CONFIGURATION
+                            <span className="font-mono text-[9px] px-2.5 py-0.5 bg-brand-purple/10 border border-brand-purple/20 rounded-full font-bold uppercase">
+                              Production C++ Sketch
                             </span>
-                            <span className="font-mono text-[10px] px-2 py-0.5 bg-emerald-900/40 border border-emerald-500/30 text-emerald-300 rounded-full font-bold">
-                              JUDGE-PROOF
+                            <span className="font-mono text-[9px] px-2.5 py-0.5 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-full font-bold">
+                              COMPILER READY
                             </span>
                           </div>
-                          <h4 className="text-sm font-semibold font-display">Demonstrating Unshakable Failover to Competition Judges</h4>
-                          <p className="text-xs leading-relaxed text-slate-300 font-sans">
-                            This C++ sketch compiles inside <strong className="text-white">Arduino IDE</strong> or VS Code PlatformIO. It runs on any standard ESP32 development board. To show true physical failover, hook up a standard tactile button to <strong className="text-white">GPIO 12</strong> (pulls down to Ground). 
-                            Turn off your phone hotspot or router WiFi. Press the button to buffer orders offline in LittleFS. Re-enable WiFi, and the device will automatically synchronize to this live terminal within 10 seconds!
+                          <h4 className="text-sm font-bold font-display text-slate-900 dark:text-white">C++ Edge Node Firmware (Arduino Sketch)</h4>
+                          <p className="text-xs leading-relaxed text-slate-650 dark:text-slate-400">
+                            This sketch is fully compatible with ESP-IDF compiler packages or Arduino IDE sketch compiler. It sets up the Wi-Fi heartbeats, local storage buffering inside LittleFS during outages, and handles automatic cloud sync pushes once connection handshakes return.
                           </p>
                         </div>
 
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-mono font-bold text-slate-400">
-                            File: ESP32_RuralSync.ino (Saved in Root Workspace)
+                          <span className="text-xs font-mono font-bold text-slate-500 dark:text-slate-400">
+                            File: ESP32_RuralSync.ino
                           </span>
                           <button
                             onClick={() => {
@@ -1748,13 +1938,13 @@ void loop() {
                               addNotification("ESP32 Arduino Sketch copied! Ready to flash.", "success");
                               setTimeout(() => setCopiedCode(false), 2000);
                             }}
-                            className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer"
+                            className="bg-brand-purple hover:bg-brand-purple/95 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg shadow transition-all flex items-center gap-1.5 cursor-pointer"
                           >
                             {copiedCode ? "Copied Sketch!" : "Copy Full C++ sketch"}
                           </button>
                         </div>
 
-                        <div className="bg-slate-950 rounded-2xl border border-slate-850 p-5 font-mono text-[11px] leading-relaxed text-slate-300 h-96 overflow-y-auto overflow-x-auto relative">
+                        <div className="bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200/50 dark:border-slate-850 p-5 font-mono text-[11px] leading-relaxed text-slate-700 dark:text-slate-350 h-96 overflow-auto relative shadow-inner">
                           <pre className="whitespace-pre">
 {`#include <WiFi.h>
 #include <HTTPClient.h>
@@ -1783,21 +1973,21 @@ const String SERVER_URL  = "${window.location.origin}/"; // Auto-configured back
             
           </div>
 
-          {/* Bottom Diagnostics Footer */}
-          <footer className="h-14 border-t border-slate-900/80 bg-slate-950/60 backdrop-blur-md shrink-0 flex items-center justify-between px-8 text-xs text-slate-500 select-none z-10">
+          {/* Lower Diagnostics Status Footer */}
+          <footer className="h-14 border-t border-slate-100 dark:border-slate-800/80 bg-white/60 dark:bg-[#1E293B]/60 backdrop-blur-md shrink-0 flex items-center justify-between px-8 text-xs text-slate-500 dark:text-slate-400 select-none z-10">
             <div className="flex gap-6">
-              <span>Device status: <span className="text-slate-300 font-mono">ONLINE</span></span>
-              <span>Memory Heap: <span className="text-slate-300">184KB Free</span></span>
-              <span>Signal Quality: <span className="text-slate-300 font-mono">{isInternetAvailable ? "-64 dBm" : "Disconnected"}</span></span>
+              <span>Device status: <span className="text-slate-700 dark:text-slate-350 font-mono font-semibold">ONLINE</span></span>
+              <span>Memory Heap: <span className="text-slate-700 dark:text-slate-350">184KB Free</span></span>
+              <span>Signal Quality: <span className="text-slate-700 dark:text-slate-350 font-mono font-semibold">{isInternetAvailable ? "-64 dBm" : "Disconnected"}</span></span>
             </div>
-            <div className="text-[10px] text-blue-500 uppercase tracking-wider font-bold italic">
+            <div className="text-[10px] text-brand-purple dark:text-brand-blue uppercase tracking-wider font-bold italic">
               ENGINEERING INNOVATION COMPETITION ENTRY • IoT RETALLING CATEGORY
             </div>
           </footer>
         </main>
       </div>
 
-      {/* Real-time Toast Notifications stack bottom right with animation */}
+      {/* Modern floating toast notification banner system */}
       <div className="fixed bottom-6 right-6 space-y-2.5 z-50 max-w-sm pointer-events-none">
         <AnimatePresence>
           {notifications.slice(0, 4).map((toast) => (
@@ -1806,26 +1996,168 @@ const String SERVER_URL  = "${window.location.origin}/"; // Auto-configured back
               initial={{ opacity: 0, x: 50, scale: 0.9 }}
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, scale: 0.8 }}
-              className={`p-4 rounded-xl shadow-2xl backdrop-blur-md border text-xs pointer-events-auto flex gap-3 ${
+              className={`p-4 rounded-2xl shadow-2xl backdrop-blur-md border text-xs pointer-events-auto flex gap-3 ${
                 toast.type === "success"
-                  ? "bg-slate-900/90 border-emerald-500/30 text-emerald-300"
+                  ? "bg-white/95 dark:bg-slate-900/95 border-emerald-500/30 text-emerald-700 dark:text-emerald-300"
                   : toast.type === "warning"
-                  ? "bg-slate-900/90 border-amber-500/30 text-amber-300"
-                  : "bg-slate-900/90 border-blue-500/30 text-blue-300"
+                  ? "bg-white/95 dark:bg-slate-900/95 border-amber-500/30 text-amber-700 dark:text-amber-300"
+                  : "bg-white/95 dark:bg-slate-900/95 border-brand-purple/30 text-brand-purple dark:text-brand-blue"
               }`}
             >
               <div className="flex-1">
-                <span className="text-[9px] text-slate-500 block mb-0.5 font-mono">
-                  {toast.time} SYSTEM NOTIFICATION
+                <span className="text-[9px] text-slate-400 dark:text-slate-500 block mb-0.5 font-mono uppercase font-bold tracking-wider">
+                  {toast.time} System Event
                 </span>
-                <p className="font-medium text-slate-100">{toast.message}</p>
+                <p className="font-bold text-slate-800 dark:text-slate-100">{toast.message}</p>
               </div>
             </motion.div>
           ))}
         </AnimatePresence>
       </div>
 
-      {/* Proposed Order Approval Dialog Modal */}
+      {/* Retailer Order Form Modal */}
+      <AnimatePresence>
+        {isOrderModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 dark:bg-slate-950/80 backdrop-blur-md p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              className="bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl relative"
+            >
+              <button
+                onClick={() => setIsOrderModalOpen(false)}
+                className="absolute top-4 right-4 p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-650 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="flex items-center gap-3.5 mb-5 pb-3 border-b border-slate-100 dark:border-slate-850">
+                <div className="w-10 h-10 bg-brand-purple/10 rounded-xl flex items-center justify-center text-brand-purple shadow">
+                  <PlusCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[10px] text-brand-purple dark:text-brand-violet font-mono font-bold tracking-widest block uppercase">Retail Portal</span>
+                  <h2 className="text-lg font-bold text-slate-900 dark:text-white leading-tight font-display">
+                    Create New Retailer Order
+                  </h2>
+                </div>
+              </div>
+
+              <form onSubmit={handleOrderSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider block mb-1">
+                      Retailer Shop Name
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Rajesh Agri-Retail Co"
+                      value={orderForm.retailerName}
+                      onChange={(e) => setOrderForm(prev => ({ ...prev, retailerName: e.target.value }))}
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-brand-purple transition-all shadow-inner"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider block mb-1">
+                      Product Name / Description
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Solar Irrigation Pump V2"
+                      value={orderForm.productName}
+                      onChange={(e) => setOrderForm(prev => ({ ...prev, productName: e.target.value }))}
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-brand-purple transition-all shadow-inner"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider block mb-1">
+                      Quantity Pack Count
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="1000"
+                      required
+                      value={orderForm.quantity}
+                      onChange={(e) => setOrderForm(prev => ({ ...prev, quantity: Number(e.target.value) }))}
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-brand-purple transition-all font-mono shadow-inner"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider block mb-1">
+                      Order Priority
+                    </label>
+                    <select
+                      value={orderForm.priority}
+                      onChange={(e) => setOrderForm(prev => ({ ...prev, priority: e.target.value as any }))}
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:border-brand-purple transition-all cursor-pointer font-medium shadow-inner"
+                    >
+                      <option value="Low">Low</option>
+                      <option value="Medium">Medium</option>
+                      <option value="High">High</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Quick chip suggestions */}
+                <div className="space-y-1.5 pt-2">
+                  <span className="text-[10px] text-slate-400 font-mono block">Quick Stocks Select:</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {sampleProducts.map((p) => (
+                      <button
+                        key={p.name}
+                        type="button"
+                        onClick={() => fillQuickOrder(p.name)}
+                        className="text-[10px] bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-850 text-slate-600 dark:text-slate-300 px-2.5 py-1.2 rounded-lg transition-colors border border-slate-200/60 dark:border-slate-800 cursor-pointer"
+                      >
+                        + {p.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-4 border-t border-slate-150 dark:border-slate-800">
+                  <p className="text-[10px] text-slate-500 max-w-xs leading-normal">
+                    <span className="text-amber-500 font-bold">Offline-Routing Note:</span> Orders made during telecom drops are automatically buffered in local LittleFS registers.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsOrderModalOpen(false)}
+                      className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-750 dark:text-slate-300 text-xs font-bold px-4 py-2.5 rounded-xl cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSubmitLoading}
+                      className="bg-brand-purple hover:opacity-95 text-white font-bold px-5 py-2.5 rounded-xl text-xs transition-all flex items-center gap-1.5 shadow-md shadow-brand-purple/25 cursor-pointer"
+                    >
+                      <PlusCircle className="w-4 h-4" />
+                      {isSubmitLoading ? "Saving..." : "Create Order"}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Proposed Order Approval Dialog Modal Prompt */}
       <AnimatePresence>
         {orders.some(o => o.status === "Proposed") && (
           (() => {
@@ -1835,73 +2167,73 @@ const String SERVER_URL  = "${window.location.origin}/"; // Auto-configured back
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4"
+                className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 dark:bg-slate-950/80 backdrop-blur-md p-4"
               >
                 <motion.div
-                  initial={{ scale: 0.9, y: 20 }}
+                  initial={{ scale: 0.95, y: 15 }}
                   animate={{ scale: 1, y: 0 }}
-                  exit={{ scale: 0.9, y: 20 }}
-                  className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl relative"
+                  exit={{ scale: 0.95, y: 15 }}
+                  className="bg-white dark:bg-[#1E293B] border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl relative"
                 >
-                  <div className="flex items-center gap-3.5 mb-4 pb-3 border-b border-slate-850">
-                    <div className="w-10 h-10 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center justify-center text-amber-400 font-bold shadow-lg">
+                  <div className="flex items-center gap-3.5 mb-4 pb-3 border-b border-slate-100 dark:border-slate-850">
+                    <div className="w-10 h-10 bg-amber-500/10 rounded-xl flex items-center justify-center text-amber-500 font-bold shadow">
                       ⚠️
                     </div>
                     <div>
-                      <span className="text-[10px] text-amber-400 font-mono font-bold tracking-widest block">ORDER REQUEST</span>
-                      <h2 className="text-lg font-bold text-white leading-tight">
+                      <span className="text-[10px] text-amber-500 font-mono font-bold tracking-widest block">ORDER REQUEST</span>
+                      <h2 className="text-lg font-bold text-slate-900 dark:text-white leading-tight font-display">
                         Approval Required
                       </h2>
                     </div>
                   </div>
 
-                  <p className="text-xs text-slate-400 mb-5 leading-relaxed">
-                    A physical push button click or simulation trigger was received from the **ESP32 Edge Gateway**. Please review the details of the proposed order:
+                  <p className="text-xs text-slate-500 dark:text-slate-450 mb-5 leading-relaxed">
+                    A physical push button impulse was registered from the **ESP32 Edge Gateway** (GPIO 12). Please review the details of the proposed order:
                   </p>
 
-                  <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 mb-6 space-y-3 font-mono text-xs">
+                  <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-2xl p-4 mb-6 space-y-3 font-mono text-xs">
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Proposal ID:</span>
-                      <span className="text-slate-300 font-bold">{proposed.orderId}</span>
+                      <span className="text-slate-400">Proposal ID:</span>
+                      <span className="text-slate-800 dark:text-slate-200 font-bold">{proposed.orderId}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Product Name:</span>
-                      <span className="text-slate-100 font-bold">{proposed.productName}</span>
+                      <span className="text-slate-400">Product Name:</span>
+                      <span className="text-slate-900 dark:text-slate-100 font-bold">{proposed.productName}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Retailer:</span>
-                      <span className="text-slate-300 font-bold">{proposed.retailerName}</span>
+                      <span className="text-slate-400">Retailer:</span>
+                      <span className="text-slate-800 dark:text-slate-300 font-bold">{proposed.retailerName}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Quantity:</span>
-                      <span className="text-slate-300">{proposed.quantity} unit(s)</span>
+                      <span className="text-slate-400">Quantity:</span>
+                      <span className="text-slate-800 dark:text-slate-350">{proposed.quantity} unit(s)</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Priority:</span>
+                      <span className="text-slate-400">Priority:</span>
                       <span className={`font-bold px-2 py-0.5 rounded text-[10px] ${
-                        proposed.priority === "High" ? "bg-red-500/10 text-red-400" :
-                        proposed.priority === "Medium" ? "bg-amber-500/10 text-amber-400" :
+                        proposed.priority === "High" ? "bg-red-500/10 text-[#EF4444]" :
+                        proposed.priority === "Medium" ? "bg-amber-500/10 text-amber-500" :
                         "bg-blue-500/10 text-blue-400"
                       }`}>
                         {proposed.priority}
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Gateway Source:</span>
-                      <span className="text-slate-400">GPIO_12_BUTTON</span>
+                      <span className="text-slate-400">Hardware Pin:</span>
+                      <span className="text-slate-500">GPIO_12_BUTTON</span>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       onClick={() => rejectOrder(proposed.id)}
-                      className="bg-slate-950 hover:bg-slate-850 text-slate-300 border border-slate-800 text-xs font-bold py-3 rounded-xl transition-all cursor-pointer text-center"
+                      className="bg-slate-100 dark:bg-slate-950 hover:bg-slate-200 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-300 border border-slate-200/50 dark:border-slate-800 text-xs font-bold py-3 rounded-xl transition-all cursor-pointer text-center"
                     >
                       Decline Order
                     </button>
                     <button
                       onClick={() => approveOrder(proposed.id)}
-                      className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-3 rounded-xl transition-all cursor-pointer text-center shadow-lg shadow-emerald-900/30"
+                      className="bg-gradient-to-r from-brand-purple to-brand-blue hover:opacity-95 text-white text-xs font-bold py-3 rounded-xl transition-all cursor-pointer text-center shadow-lg shadow-brand-purple/20"
                     >
                       Accept Order
                     </button>

@@ -11,7 +11,7 @@ interface Order {
   retailerName: string;
   priority: "Low" | "Medium" | "High";
   timestamp: string;
-  status: "Pending" | "Synced" | "Failed";
+  status: "Pending" | "Synced" | "Failed" | "Proposed";
   storageLocation: "Cloud" | "ESP32 Local Buffer";
 }
 
