@@ -6,8 +6,20 @@ export interface Order {
   retailerName: string;
   priority: "Low" | "Medium" | "High";
   timestamp: string;
-  status: "Pending" | "Synced" | "Failed" | "Proposed";
+  status:
+    | "Created"
+    | "Buffered Offline"
+    | "Synced"
+    | "Approved"
+    | "Payment Pending"
+    | "Paid"
+    | "In Transit"
+    | "Delivered"
+    | "Proposed"
+    | "Failed";
   storageLocation: "Cloud" | "ESP32 Local Buffer";
+  notes?: string;
+  pricePerUnit?: number;
 }
 
 export interface DeviceStatus {

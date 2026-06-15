@@ -24,7 +24,7 @@ export default function ESP32Mockup({
   const [showLittleFS, setShowLittleFS] = useState(false);
 
   // Filter pending orders representing buffered files on LittleFS /orders.txt
-  const bufferedOrders = orders.filter((o) => o.status === "Pending");
+  const bufferedOrders = orders.filter((o) => o.status === "Buffered Offline" || o.status === "Proposed");
 
   // Animate LED blink when actions happen
   useEffect(() => {

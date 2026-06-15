@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Order, DeviceStatus, DeviceEvent, SyncLog } from "./types";
 
 export interface DemoStep {
@@ -20,21 +20,26 @@ export function useRuralSync() {
   const [demoActive, setDemoActive] = useState(false);
   const [demoMessage, setDemoMessage] = useState("");
   const [demoSteps, setDemoSteps] = useState<DemoStep[]>([
-    { name: "Verifying Connection", description: "Boot ESP32 & check cloud connectivity", active: false, status: "idle" },
-    { name: "Create Online Order", description: "Generate a sales record synced directly to cloud", active: false, status: "idle" },
-    { name: "Simulate Outage", description: "Inject network disconnect to check offline state", active: false, status: "idle" },
-    { name: "Create Offline Orders", description: "Buffer orders safely on ESP32 flash memory via LittleFS", active: false, status: "idle" },
-    { name: "Restore & Handshake", description: "Reconnect wifi and start automatic transmission", active: false, status: "idle" },
-    { name: "Completed Sync", description: "All buffer records uploaded and verified on cloud", active: false, status: "idle" }
+    { name: "Customer Login", description: "Authenticate as Rural Customer", active: false, status: "idle" },
+    { name: "Create Order", description: "Submit transaction while online", active: false, status: "idle" },
+    { name: "Simulate Outage", description: "Trigger telecommunication link failure", active: false, status: "idle" },
+    { name: "ESP32 local buffer", description: "Create order stored offline in LittleFS", active: false, status: "idle" },
+    { name: "View Offline Queue", description: "Review buffered order on Edge module", active: false, status: "idle" },
+    { name: "Restore connection", description: "Re-establish cellular network link", active: false, status: "idle" },
+    { name: "Automatic sync", description: "Edge gateway handshakes and uploads buffer", active: false, status: "idle" },
+    { name: "Supplier receives order", description: "Log in as Urban Supplier to view order", active: false, status: "idle" },
+    { name: "Supplier accepts order", description: "Review and approve order details", active: false, status: "idle" },
+    { name: "Customer receives approval", description: "Order status shifts to Payment Pending", active: false, status: "idle" },
+    { name: "Payment completed", description: "Customer pays, simulating checkout flow", active: false, status: "idle" },
+    { name: "Order Dispatched", description: "Supplier ships package (In Transit)", active: false, status: "idle" },
+    { name: "Delivery Completed", description: "Supplier marks order as Delivered in village", active: false, status: "idle" }
   ]);
 
   // Notification overlay systems
   const [notifications, setNotifications] = useState<{ id: string; message: string; type: "success" | "info" | "warning"; time: string }[]>([]);
 
   const addNotification = (message: string, type: "success" | "info" | "warning") => {
-    const id = Math.random().toString(36).substring(2, 9);
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    setNotifications((prev) => [{ id, message, type, time }, ...prev].slice(0, 15));
+    // Toast notifications disabled per user request
   };
 
   // Fetch all server data
@@ -80,17 +85,17 @@ export function useRuralSync() {
     fetchData();
     const interval = setInterval(() => {
       fetchData();
-    }, 4500); // Poll database state every 4.5 seconds to reflect simulated hardware status
+    }, 4500); // Poll database state every 4.5 seconds
     return () => clearInterval(interval);
   }, []);
 
   // API Call Triggers
-  const addOrder = async (productName: string, quantity: number, retailerName: string, priority: "Low" | "Medium" | "High", proposed = false) => {
+  const addOrder = async (productName: string, quantity: number, retailerName: string, priority: "Low" | "Medium" | "High", proposed = false, notes = "", pricePerUnit = 1500) => {
     try {
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productName, quantity, retailerName, priority, proposed })
+        body: JSON.stringify({ productName, quantity, retailerName, priority, proposed, notes, pricePerUnit })
       });
       if (res.ok) {
         const data = await res.json();
@@ -118,7 +123,7 @@ export function useRuralSync() {
       const res = await fetch(`/api/orders/${id}/approve`, { method: "POST" });
       if (res.ok) {
         const data = await res.json();
-        addNotification(`Order Approved: ${data.order.orderId} is now synced to Cloud`, "success");
+        addNotification(`Order Approved: ${data.order.orderId} status shifted to Payment Pending`, "success");
         fetchData();
       }
     } catch (e) {
@@ -138,6 +143,58 @@ export function useRuralSync() {
     }
   };
 
+  const payOrder = async (id: string) => {
+    try {
+      const res = await fetch(`/api/orders/${id}/pay`, { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        addNotification(`Payment Successful: ${data.order.orderId} is now marked as Paid`, "success");
+        fetchData();
+      }
+    } catch (e) {
+      console.error("Error paying order:", e);
+    }
+  };
+
+  const requestPayment = async (id: string) => {
+    try {
+      const res = await fetch(`/api/orders/${id}/request-payment`, { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        addNotification(`Payment request sent for ${data.order.orderId}`, "success");
+        fetchData();
+      }
+    } catch (e) {
+      console.error("Error requesting payment:", e);
+    }
+  };
+
+  const dispatchOrder = async (id: string) => {
+    try {
+      const res = await fetch(`/api/orders/${id}/dispatch`, { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        addNotification(`Order Dispatched: ${data.order.orderId} is now In Transit`, "success");
+        fetchData();
+      }
+    } catch (e) {
+      console.error("Error dispatching order:", e);
+    }
+  };
+
+  const deliverOrder = async (id: string) => {
+    try {
+      const res = await fetch(`/api/orders/${id}/deliver`, { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        addNotification(`Order Delivered: ${data.order.orderId} marked as Delivered`, "success");
+        fetchData();
+      }
+    } catch (e) {
+      console.error("Error marking delivered:", e);
+    }
+  };
+
   const toggleNetworkState = async (available: boolean) => {
     try {
       const res = await fetch("/api/network-status", {
@@ -149,16 +206,25 @@ export function useRuralSync() {
         const data = await res.json();
         setIsInternetAvailable(data.isInternetAvailable);
         setDeviceStatus(data.deviceStatus);
-        
-        if (available) {
-          addNotification("Internet Restored: ESP32 Edge Gateway handshake initialized", "success");
+
+        if (!available) {
+          addNotification("Internet Outage: ESP32 switched to LittleFS local buffer mode", "warning");
         } else {
-          addNotification("Internet Connection Lost: ESP32 switched to local buffer storage Mode", "warning");
+          // Network restored — server already auto-synced
+          const synced: number = data.ordersSynced ?? 0;
+          if (synced > 0) {
+            addNotification(
+              `Network Restored: ESP32 auto-synced ${synced} buffered order(s) to Cloud!`,
+              "success"
+            );
+          } else {
+            addNotification("Network Restored: ESP32 online — no buffered orders to sync", "success");
+          }
         }
         fetchData();
       }
     } catch (e) {
-      console.error(e);
+      console.error("Error toggling network state:", e);
     }
   };
 
@@ -176,7 +242,7 @@ export function useRuralSync() {
         return { error: true, message: data.error };
       }
     } catch (e) {
-      console.error(e);
+      console.error("Error triggering sync:", e);
       addNotification("Synchronization failed due to network timeout", "warning");
     }
   };
@@ -192,7 +258,7 @@ export function useRuralSync() {
         }, 1500);
       }
     } catch (e) {
-      console.error(e);
+      console.error("Error restarting device:", e);
     }
   };
 
@@ -204,15 +270,15 @@ export function useRuralSync() {
         fetchData();
       }
     } catch (e) {
-      console.error(e);
+      console.error("Error resetting demo:", e);
     }
   };
 
-  // Fully Automated Step-by-Step Competition Demonstration
+  // Full 13-step demonstration sequence
   const runFullDemo = async () => {
     if (demoActive) return;
     setDemoActive(true);
-    addNotification("Starting RuralSync Automatic Demo Sequence!", "info");
+    addNotification("Starting RuralSync Dual-Portal Demonstration Sequence!", "info");
 
     const updateStep = (index: number, status: "idle" | "running" | "success" | "error", active: boolean) => {
       setDemoSteps(prev => prev.map((step, idx) => {
@@ -226,58 +292,117 @@ export function useRuralSync() {
     const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
     try {
-      // Step 1: Verification
+      // Step 1: Customer Login
       updateStep(0, "running", true);
-      setDemoMessage("Booting ESP32 Node and validating Cloud Server link status...");
-      await toggleNetworkState(true);
+      setDemoMessage("Step 1/13: Logging in as Rural Customer...");
       await sleep(2000);
       updateStep(0, "success", false);
 
-      // Step 2: Create Online Order
+      // Step 2: Create Order
       updateStep(1, "running", true);
-      setDemoMessage("Creating order while ONLINE. Simulating standard real-time transactions...");
-      await addOrder("Solar Power Battery Charger", 1, "Rajesh Agri-Retail Co", "High");
+      setDemoMessage("Step 2/13: Creating order while ONLINE (Rajesh Agri-Retail Co)...");
+      const ord1 = await addOrder("Solar Irrigation Pump", 1, "Rajesh Agri-Retail Co", "High", false, "First online order");
       await sleep(2500);
       updateStep(1, "success", false);
 
       // Step 3: Simulate Outage
       updateStep(2, "running", true);
-      setDemoMessage("Simulating complete fiber-cut / server outage on the rural region segment...");
+      setDemoMessage("Step 3/13: Injected telecom outage... Internet connection lost.");
       await toggleNetworkState(false);
-      await sleep(3000);
+      await sleep(2500);
       updateStep(2, "success", false);
 
-      // Step 4: Create Offline Orders
+      // Step 4: ESP32 local buffer
       updateStep(3, "running", true);
-      setDemoMessage("Creating multiple retailer orders during network outage. Watch them store inside LittleFS orders.txt...");
-      await addOrder("Deepwell Submersible Pump", 2, "Karan Agri-Services Ltd", "High");
-      await sleep(2000);
-      await addOrder("Organic Super-Phosphate Bags", 12, "Ram Prasad Fertilisers", "Medium");
+      setDemoMessage("Step 4/13: Creating order while OFFLINE. Buffered offline in LittleFS orders.txt.");
+      const ord2 = await addOrder("Soil Humidity Sensor Probe", 4, "Rajesh Agri-Retail Co", "Medium", false, "Offline buffer test");
       await sleep(2500);
       updateStep(3, "success", false);
 
-      // Step 5: Restore WiFi & handshake
+      // Step 5: View Offline Queue
       updateStep(4, "running", true);
-      setDemoMessage("Restoring telecom cellular link. Re-establishing secure TLS connection handshake...");
-      await toggleNetworkState(true);
-      await sleep(3000);
+      setDemoMessage("Step 5/13: Viewing buffered orders inside the offline queue explorer...");
+      await sleep(2500);
       updateStep(4, "success", false);
 
-      // Step 6: Complete Auto Synchronization
+      // Step 6: Restore connection
       updateStep(5, "running", true);
-      setDemoMessage("Handshake completed! Starting automatic upload of buffered order cache, clearing LittleFS cluster...");
-      await triggerSync();
+      setDemoMessage("Step 6/13: Restoring internet telecom connectivity...");
+      await toggleNetworkState(true);
       await sleep(2500);
       updateStep(5, "success", false);
 
-      addNotification("Demo Complete! Total system reliability of 100% demonstrated successfully.", "success");
-      setDemoMessage("Demo completed successfully! Restored clean online operations.");
+      // Step 7: Automatic sync
+      updateStep(6, "running", true);
+      setDemoMessage("Step 7/13: Automatic sync handshake established. Uploading buffer queue...");
+      await triggerSync();
+      await sleep(2500);
+      updateStep(6, "success", false);
+
+      // Step 8: Supplier receives order
+      updateStep(7, "running", true);
+      setDemoMessage("Step 8/13: Order synced! Supplier receives order details on incoming portal...");
+      await sleep(2500);
+      updateStep(7, "success", false);
+
+      // Fetch latest orders to get reference to the new ones
+      let fetchedOrders: Order[] = [];
+      const ordersRes = await fetch("/api/orders");
+      if (ordersRes.ok) {
+        const data = await ordersRes.json();
+        fetchedOrders = data.orders;
+      }
+      const targetOrder = fetchedOrders.find(o => o.productName.includes("Soil Humidity Sensor")) || fetchedOrders[0];
+
+      // Step 9: Supplier accepts order
+      updateStep(8, "running", true);
+      setDemoMessage(`Step 9/13: Supplier accepts Order ${targetOrder ? targetOrder.orderId : ""}. Status: Payment Pending...`);
+      if (targetOrder) {
+        await approveOrder(targetOrder.id);
+      }
+      await sleep(2500);
+      updateStep(8, "success", false);
+
+      // Step 10: Customer receives approval
+      updateStep(9, "running", true);
+      setDemoMessage("Step 10/13: Customer receives approval and payment prompt...");
+      await sleep(2500);
+      updateStep(9, "success", false);
+
+      // Step 11: Payment completed
+      updateStep(10, "running", true);
+      setDemoMessage(`Step 11/13: Simulating customer checkout payment. Status shifts to Paid...`);
+      if (targetOrder) {
+        await payOrder(targetOrder.id);
+      }
+      await sleep(2500);
+      updateStep(10, "success", false);
+
+      // Step 12: Order Dispatched
+      updateStep(11, "running", true);
+      setDemoMessage(`Step 12/13: Supplier dispatches order in transit...`);
+      if (targetOrder) {
+        await dispatchOrder(targetOrder.id);
+      }
+      await sleep(2500);
+      updateStep(11, "success", false);
+
+      // Step 13: Delivery Completed
+      updateStep(12, "running", true);
+      setDemoMessage(`Step 13/13: Order successfully delivered to rural village!`);
+      if (targetOrder) {
+        await deliverOrder(targetOrder.id);
+      }
+      await sleep(2500);
+      updateStep(12, "success", false);
+
+      addNotification("Demo Complete! End-to-end IoT supply chain reliability verified.", "success");
+      setDemoMessage("Demo completed successfully!");
     } catch (err) {
-      console.error(err);
-      addNotification("Interactive automation experienced a runtime error", "warning");
+      console.error("Demo sequence error:", err);
+      addNotification("Demonstration sequence experienced a runtime error", "warning");
     } finally {
       setDemoActive(false);
-      // Reset steps state indicator in 5 seconds
       setTimeout(() => {
         setDemoSteps(prev => prev.map(s => ({ ...s, status: "idle", active: false })));
         setDemoMessage("");
@@ -299,6 +424,10 @@ export function useRuralSync() {
     addOrder,
     approveOrder,
     rejectOrder,
+    payOrder,
+    requestPayment,
+    dispatchOrder,
+    deliverOrder,
     toggleNetworkState,
     triggerSync,
     restartDevice,

@@ -48,15 +48,15 @@ body.dark {
 /* Glassmorphism utility */
 .glass-panel {
   background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
   border: 1px solid rgba(226, 232, 240, 0.8);
 }
 
 .dark .glass-panel {
   background: rgba(30, 41, 59, 0.7);
-  backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
   border: 1px solid rgba(51, 65, 85, 0.5);
 }
 
@@ -73,3 +73,25 @@ body.dark {
 .hover-lift:hover {
   transform: translateY(-4px);
 }
+
+/* Zaragoza theme & login styling utilities */
+.bg-dot-pattern {
+  background-image: radial-gradient(rgba(108, 59, 255, 0.08) 1.5px, transparent 1.5px);
+  background-size: 20px 20px;
+}
+
+.dark .bg-dot-pattern {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1.5px, transparent 1.5px);
+}
+
+.blur-circle {
+  filter: blur(60px);
+  mix-blend-mode: multiply;
+  opacity: 0.85;
+}
+
+.dark .blur-circle {
+  mix-blend-mode: screen;
+  opacity: 0.3;
+}
+
